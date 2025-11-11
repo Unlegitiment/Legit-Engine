@@ -1,0 +1,14 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Win32" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/Legit Engine/">
+    <Project Path="Discord/Discord.vcxproj" Id="2918c4e1-d240-4695-aec9-1826a4112fb6" />
+    <Project Path="LECore/LECore.vcxproj" Id="5965ca9f-bd30-4b87-b4aa-d6e92ee8c78b" />
+  </Folder>
+  <Folder Name="/Tests/">
+    <Project Path="Main/Main.vcxproj" Id="ecf33edb-a025-4f05-a684-8b6fbadf331a" />
+  </Folder>
+</Solution>
