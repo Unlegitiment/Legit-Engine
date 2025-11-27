@@ -10,5 +10,6 @@
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="Main/Main.vcxproj" Id="ecf33edb-a025-4f05-a684-8b6fbadf331a" />
+    <Project Path="Project1/Project1.vcxproj" Id="31bd9c68-2baa-4b7e-9859-df38e9aac13f" />
   </Folder>
 </Solution>

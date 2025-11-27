@@ -15,25 +15,9 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="core\args.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
+    <FxCompile Include="vs.hlsl" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="core\args.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="headers\platform_specs.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="maths\vec2.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="types.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="Logger\Logger.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
+    <None Include="ps.hlsl" />
   </ItemGroup>
 </Project>

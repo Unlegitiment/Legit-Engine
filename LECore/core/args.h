@@ -10,4 +10,5 @@ namespace legit {
 	private:
 
 	};
+	inline fwCmdArgs* g_Args = nullptr;
 }

@@ -24,6 +24,7 @@
   <ItemGroup>
     <ClInclude Include="core\args.h" />
     <ClInclude Include="headers\platform_specs.h" />
+    <ClInclude Include="Logger\Logger.h" />
     <ClInclude Include="maths\vec2.h" />
     <ClInclude Include="types.h" />
   </ItemGroup>

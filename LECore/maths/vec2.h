@@ -40,14 +40,8 @@ namespace legit {
 		static constexpr int YSLOT = 1;
 		using PtrType = T*;
 	public:
-		__m128 GetRaw() {
+		__m128 GetRaw() const {
 			return this->m_128;
-		}
-		_Vector2_<T> GetAsV2() {
-			_Vector2_<T> ret;
-			ret.x = Get()[XSLOT];
-			ret.y = Get()[YSLOT];
-			return ret;
 		}
 		void Put(T x, T y) {
 			Get()[XSLOT] = x;
@@ -78,6 +72,7 @@ namespace legit {
 		}
 		__m128 m_128; // 4 bit float? 32*4 
 	};
+
 	using qVect2f = qVect2<float>;
 	using qVect2i = qVect2<int>;
 }

@@ -27,6 +27,9 @@
     <ClCompile Include="Application.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="Logger\GameLogger.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="WindowHandling\CWindow.h">
@@ -41,5 +44,14 @@
     <ClInclude Include="Application.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Logger\GameLogger.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Exception\exception.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="packages.config" />
   </ItemGroup>
 </Project>
