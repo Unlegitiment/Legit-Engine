@@ -359,113 +359,320 @@ class CApplication;
 #include <DirectXMath.h>
 #include <d3dcompiler.h>
 #pragma comment(lib, "d3dcompiler.lib")
+struct lagShaderBytecode {
+	lagShaderBytecode(void* pByte, size_t size){
+		this->m_ByteCode.resize(size);
+		memcpy(this->m_ByteCode.data(), pByte, size);
+	}
+	~lagShaderBytecode() {
+
+	}
+	const void* GetByte() const {
+		return m_ByteCode.data();
+	}
+	size_t GetSize() const {
+		return m_ByteCode.size();
+	}
+	std::vector<char> m_ByteCode;
+};
+
+class lagCompilerDX11 {
+public:
+	lagShaderBytecode Compile(const wchar_t* path, const char* entryPoint, const char* ShaderVersion, UINT flags) {
+		ID3DBlob* ErrorBlob{},* Blob{};
+		HRESULT hr;
+		hr = D3DCompileFromFile(path, NULL, NULL, entryPoint, ShaderVersion, flags, 0, &Blob, &ErrorBlob); // This might be just static behavior. 
+		if (FAILED(hr)) {
+			std::cout << "[lagCompilerDX11] " << ErrorBlob->GetBufferPointer() << std::endl;
+			ErrorBlob->Release();
+			return{nullptr,0};
+		}
+		/* YOU JUST GENIUNELY CANNOT MAKE THIS SHIT UP LMAO PEAK GPT MOMENT HAHAHAHAHAHAHAHA. WHAT A GARBAGE FUCKING ROBOT LMAO.*/
+		lagShaderBytecode byte = { Blob->GetBufferPointer(), Blob->GetBufferSize() };
+		Blob->Release();
+		return byte;
+	}
+};
+class lagShaderCompiler {
+public:
+	static void InitClass() {
+		sm_Compiler = new lagCompilerDX11();
+	}
+	static lagShaderBytecode Compile(const wchar_t* path, const char* entryPoint, const char* ShaderVersion, UINT flags) {
+		return sm_Compiler->Compile(path, entryPoint, ShaderVersion, flags);
+	}
+	static void DestroyClass() {
+		delete sm_Compiler;
+	}
+private:
+	static inline lagCompilerDX11* sm_Compiler;
+};
+
+using DeviceSignature = ID3D11Device * (*)();
+static DeviceSignature GetDevice;
 //If blobs are not useful past the compile stage and the Input Assembler might scrap the in-class definition for compiling shaders and put it into a different object. 
 class lagVertexShader {
 public:
-	static inline ID3D11Device* sm_Device = nullptr; // because this is so piss poor, i need to globalize the device. 
-	static constexpr const char* SHADER_VER = "vs_5_0";
 	static constexpr const char* SHADER_DBG_FAIL = "[VS] ";
-	lagVertexShader(const wchar_t* path, const char* entryPoint, UINT flags) {
-		ID3DBlob* ErrorBlob{};
+	lagVertexShader(const lagShaderBytecode& byteCode) {
 		HRESULT hr;
-		hr = D3DCompileFromFile(path, NULL, NULL, entryPoint, SHADER_VER, flags, 0, &m_Blob, &ErrorBlob); // This might be just static behavior. 
+		hr = GetDevice()->CreateVertexShader(byteCode.GetByte(), byteCode.GetSize(), nullptr, &m_ShaderProgram);
 		if (FAILED(hr)) {
-			std::cout << SHADER_DBG_FAIL << ErrorBlob->GetBufferPointer() << std::endl; 
-			ErrorBlob->Release(); // Contain.
-			return;
-		}
-		hr = sm_Device->CreateVertexShader(m_Blob->GetBufferPointer(), m_Blob->GetBufferSize(), nullptr, &m_ShaderProgram);
-		if (FAILED(hr)) {
-			std::cout << SHADER_DBG_FAIL << hr << std::endl;
+			std::cout << SHADER_DBG_FAIL << hr << "\n\0";
 			return;
 		}
 	}
 	ID3D11VertexShader* GetShader() {
 		return this->m_ShaderProgram;
 	}
-	ID3DBlob* GetBlob() {
-		return this->m_Blob;
-	}
 	~lagVertexShader() {
-		m_Blob->Release();
-		m_ShaderProgram->Release(); 
+		if (m_ShaderProgram) m_ShaderProgram->Release();
 	}
 private:
-	ID3DBlob* m_Blob{};
-	ID3D11VertexShader* m_ShaderProgram;
+	ID3D11VertexShader* m_ShaderProgram = nullptr;
 };
 class lagFragmentShader {
 public:
-	static inline ID3D11Device* sm_Device = nullptr;
-	static constexpr const char* SHADER_VER = "ps_5_0";
 	static constexpr const char* SHADER_DBG_FAIL = "[PS] ";
-	lagFragmentShader(const wchar_t* path, const char* entryPoint, UINT flags) {
-#pragma region SHADER_COMPILE
-		ID3DBlob* ErrorBlob{};
-		HRESULT hr;
-		hr = D3DCompileFromFile(path, NULL, NULL, entryPoint, SHADER_VER, flags, 0, &m_Blob, &ErrorBlob); // This might be just static behavior. 
-		if (FAILED(hr)) {
-			std::cout << SHADER_DBG_FAIL << ErrorBlob->GetBufferPointer() << std::endl;
-			ErrorBlob->Release(); // Contain.
-			return;
-		}
-#pragma endregion 
-		hr = sm_Device->CreatePixelShader(m_Blob->GetBufferPointer(), m_Blob->GetBufferSize(), nullptr, &m_ShaderProgram);
+	lagFragmentShader(const lagShaderBytecode& byteCode) {
+		HRESULT hr{};
+		hr = GetDevice()->CreatePixelShader(byteCode.GetByte(), byteCode.GetSize(), nullptr, &m_ShaderProgram);
 		if (FAILED(hr)) {
 			std::cout << SHADER_DBG_FAIL << hr << std::endl;
 			return;
 		}
 	}
+	lagFragmentShader(const lagFragmentShader&) = delete;
+	lagFragmentShader& operator=(const lagFragmentShader&) = delete;
+
+	lagFragmentShader(lagFragmentShader&& rhs) noexcept {
+		this->m_ShaderProgram = rhs.m_ShaderProgram;
+		rhs.m_ShaderProgram = nullptr;
+	}
+	lagFragmentShader& operator=(lagFragmentShader&& rhs) noexcept {
+		this->m_ShaderProgram = rhs.m_ShaderProgram;
+		rhs.m_ShaderProgram = nullptr;
+	}
 	ID3D11PixelShader* GetShader() {
 		return this->m_ShaderProgram;
 	}
-	ID3DBlob* GetBlob() {
-		return this->m_Blob;
-	}
 	~lagFragmentShader() {
-		m_Blob->Release();
-		m_ShaderProgram->Release();
+		if(m_ShaderProgram) m_ShaderProgram->Release();
 	}
 private:
-	ID3DBlob* m_Blob{};
-	ID3D11PixelShader* m_ShaderProgram;
+	ID3D11PixelShader* m_ShaderProgram = nullptr;
 };
 struct Vertex {
 	DirectX::XMFLOAT3 m_Positions;
 	DirectX::XMFLOAT3 m_Color;
 };
+class lagInputAssembler {
+public:
+	lagInputAssembler(const lagShaderBytecode& VS) {
+		HRESULT hr;
+		D3D11_INPUT_ELEMENT_DESC element1{};
+		element1.SemanticName = "POSITION";
+		element1.SemanticIndex = 0;
+		element1.Format = DXGI_FORMAT_R32G32B32_FLOAT;
+		element1.InputSlot = 0;
+		element1.AlignedByteOffset = 0;
+		element1.InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
+		element1.InstanceDataStepRate = 0;
+
+		D3D11_INPUT_ELEMENT_DESC element2{};
+		element2.SemanticName = "COLOR";
+		element2.SemanticIndex = 0;
+		element2.Format = DXGI_FORMAT_R32G32B32_FLOAT;
+		element2.InputSlot = 0;
+		element2.AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT;
+		element2.InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
+		element2.InstanceDataStepRate = 0;
+
+		D3D11_INPUT_ELEMENT_DESC Desc[2] = { element1, element2 };
+		hr = GetDevice()->CreateInputLayout(Desc, 2, VS.GetByte(), VS.GetSize(), &m_Layout); // 
+		if (FAILED(hr)) {
+			std::cout << hr << std::endl;
+			return;
+		}
+	}
+	ID3D11InputLayout* GetLayout() {
+		return m_Layout;
+	}
+	~lagInputAssembler() {
+		if(m_Layout) m_Layout->Release();
+	}
+private:
+	ID3D11InputLayout* m_Layout;
+};
 class lagVertexBuffer {
 public:
-	static inline ID3D11Device* sm_Device = nullptr;
-	lagVertexBuffer() {
+	lagVertexBuffer(const void* pData, size_t iDataSize, size_t iStride) {
 		D3D11_BUFFER_DESC Description{};
-		Description.ByteWidth = sizeof(vertices); // This is this size of my buffer?
+		Description.ByteWidth = iDataSize * iStride; // This is this size of my buffer?
 		Description.Usage = D3D11_USAGE::D3D11_USAGE_DEFAULT;
 		Description.BindFlags = D3D11_BIND_FLAG::D3D11_BIND_VERTEX_BUFFER;
 		Description.CPUAccessFlags = 0;
 		Description.StructureByteStride = 0; // Im not sure how to use this?
 		D3D11_SUBRESOURCE_DATA mData{};
-		mData.pSysMem = this->vertices;
+		// Check this call. 
+		mData.pSysMem = pData; // because internally I would assume that it copies the data TO the gpu. 
 		HRESULT hr;
-		hr = sm_Device->CreateBuffer(&Description, &mData, &m_VertexBuffer);
-
+		hr = GetDevice()->CreateBuffer(&Description, &mData, &m_VertexBuffer);
+		this->m_VertexSize = iDataSize; // Amount of Vertices to Draw.
 	}
-	// obviously we don't want this here. This has nothing to do with the vertex buffer itself. this is just the separation phase of the shit.
-	void Bind(ID3D11DeviceContext* Context) const {
-		UINT stride = sizeof(Vertex);
-		UINT offsets = 0;
-		Context->IASetVertexBuffers(0, 1, &m_VertexBuffer, &stride, &offsets);
+	ID3D11Buffer* GetBuffer() {
+		return this->m_VertexBuffer;
+	}
+	ID3D11Buffer** GetBufferPtr() {
+		return &this->m_VertexBuffer;
+	}
+	size_t GetSize() const {
+		return m_VertexSize;
 	}
 	~lagVertexBuffer() {
 		m_VertexBuffer->Release(); 
 	}
 private:
+	size_t m_VertexSize;
 	ID3D11Buffer* m_VertexBuffer;
-	const Vertex vertices[3] = {
-		{{ -0.5f, -0.5f, 0.0f}, {1.0,0,0}},
-		{ {0.0f,  0.5f, 0.0f}, {0,1.0,0} },
-		{{0.5f, -0.5f, 0.0f}, {0.0,0,1.0}},
-	};
+};
+class lagIndexBuffer {
+public:
+	lagIndexBuffer(const unsigned int* Buffer, size_t iDataSize) {
+		D3D11_BUFFER_DESC Description{};
+		Description.ByteWidth = iDataSize * sizeof (unsigned int); // This is this size of my buffer?
+		Description.Usage = D3D11_USAGE::D3D11_USAGE_DEFAULT;
+		Description.BindFlags = D3D11_BIND_FLAG::D3D11_BIND_INDEX_BUFFER;
+		Description.CPUAccessFlags = 0;
+		Description.StructureByteStride = 0; // Im not sure how to use this?
+		D3D11_SUBRESOURCE_DATA mData{};
+		
+		mData.pSysMem = Buffer; // because internally I would assume that it copies the data TO the gpu. 
+		HRESULT hr;
+		hr = GetDevice()->CreateBuffer(&Description, &mData, &m_Buffer);
+		this->m_iDataSize = iDataSize;
+	}
+	ID3D11Buffer* GetBuffer() {
+		return m_Buffer;
+	}
+	ID3D11Buffer** GetBufferPtr() {
+		return &m_Buffer;
+	}
+	size_t GetSize() const {
+		return m_iDataSize;
+	}
+	~lagIndexBuffer() {
+		if(m_Buffer) m_Buffer->Release();
+	}
+private:
+	ID3D11Buffer* m_Buffer = nullptr;
+	size_t m_iDataSize = 0;
+};
+class CMyCube {
+public:
+	CMyCube() {
+		auto m_CPUVb = MakeModel();
+		this->m_VB = new lagVertexBuffer(m_CPUVb.data(), m_CPUVb.size(), sizeof Vertex); // Type.
+		auto cpuIb = MakeIndices();
+		this->m_IB = new lagIndexBuffer(cpuIb.data(), cpuIb.size());
+	}
+	DirectX::XMMATRIX& GetMtx() {
+		return m_LocalMtx;
+	}
+	void Draw(ID3D11DeviceContext* pContext) {
+		const UINT stride = sizeof Vertex;
+		const UINT offset = 0;
+		pContext->IASetVertexBuffers(0,1,this->m_VB->GetBufferPtr(), &stride, &offset);
+		pContext->IASetIndexBuffer(this->m_IB->GetBuffer(), DXGI_FORMAT_R32_UINT, 0); // I would assume thats the type lmao.
+		pContext->DrawIndexed(m_IB->GetSize(), 0, 0); // test.
+	}
+	~CMyCube() {
+		delete m_IB;
+		delete m_VB;
+	}
+	
+private:
+	DirectX::XMMATRIX m_LocalMtx = DirectX::XMMatrixIdentity();
+	std::vector<Vertex> MakeModel() {
+		Assimp::Importer importer;
+		const aiScene* scene = importer.ReadFile("C:\\Users\\codyc\\OneDrive\\Docs from Gaming PC\\Documents\\TestModels\\object.obj", aiPostProcessSteps::aiProcess_Triangulate);
+		if (scene->HasMeshes()) {
+			aiMesh* mesh = scene->mMeshes[0]; // Of course this is a static check because I already know how many models I have. Ideally I'd check this. 
+			std::vector<Vertex> Mesh;
+			for (int i = 0; i < mesh->mNumVertices; i++) {
+				aiVector3D v3D = mesh->mVertices[i];
+				Vertex v{};
+				v.m_Positions = { v3D.x, v3D.y, v3D.z };
+				if (i % 3) {
+					v.m_Color = { 1.0,0,0 };
+				}
+				else if (i % 2) {
+					v.m_Color = { 0,1.0,0 };
+				}
+				else if (i % 1) {
+					v.m_Color = { 0,0,1.0 };
+				}
+				else {
+					v.m_Color = { 1.0,1.0,1.0 };
+				}
+				Mesh.push_back(v);
+			}
+			return Mesh;
+		}
+		std::cout << "Scene does not have a mesh!\n\0";
+		return { };
+	}
+	std::vector<unsigned int> MakeIndices() {
+		Assimp::Importer importer;
+		const aiScene* scene = importer.ReadFile("C:\\Users\\codyc\\OneDrive\\Docs from Gaming PC\\Documents\\TestModels\\object.obj", aiPostProcessSteps::aiProcess_Triangulate);
+		if (scene->HasMeshes()) {
+			aiMesh* mesh = scene->mMeshes[0]; // Of course this is a static check because I already know how many models I have. Ideally I'd check this. 
+			std::vector<unsigned int> Mesh;
+			if (mesh->HasFaces()) {
+				for (int i = 0; i < mesh->mNumFaces; i++) {
+					aiFace& Face = mesh->mFaces[i];
+					Mesh.push_back(Face.mIndices[0]);
+					Mesh.push_back(Face.mIndices[1]);
+					Mesh.push_back(Face.mIndices[2]);
+				}
+			}
+			return Mesh;
+		}
+		std::cout << "Scene does not have a mesh!\n\0";
+		return { };
+	}
+	lagVertexBuffer* m_VB = nullptr;
+	lagIndexBuffer* m_IB = nullptr;
+};
+struct Constant {
+	DirectX::XMMATRIX m_Projection;
+	DirectX::XMMATRIX m_View;
+	DirectX::XMMATRIX m_Model;
+};
+class camCamera{
+public:
+	camCamera() {
+
+	}
+	void SetPosition(DirectX::XMFLOAT3 _newPos) {
+		m_Position = _newPos;
+	}
+	DirectX::XMMATRIX WhatWeLookingAt() const { 
+		return DirectX::XMMatrixLookAtLH(DirectX::XMLoadFloat3(&m_Position), DirectX::XMLoadFloat3(&m_Target), DirectX::XMLoadFloat3(&m_Up));
+	}
+	DirectX::XMMATRIX GetPerspectiveMtx(float fAspectRatio) {
+		return DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(this->m_fFOV), fAspectRatio, m_fNearZ, m_fFarZ);
+	}
+	~camCamera() {
+
+	}
+public:
+	float m_fFOV = 60.0; // 60 is a good default Although should just make it project spec :/
+	float m_fNearZ = 0.00001f;
+	float m_fFarZ = 100.f;
+	DirectX::XMFLOAT3 m_Position = {0,0,-10}; // Target and Position can never meet. 
+	DirectX::XMFLOAT3 m_Target = { 0,0,0 };
+	DirectX::XMFLOAT3 m_Up = { 0,1,0 }; // Although we should change this to not be this. As up might be a global?
 };
 class CRenderer {
 public:
@@ -473,11 +680,32 @@ public:
 		static CRenderer s_Renderer;
 		return s_Renderer;
 	}
+	static ID3D11Device* __GetDevice() {
+		return Get().m_pDevice;
+	}
 	void InitDeviceLayer() {
-		lagVertexShader::sm_Device = this->m_pDevice;
-		lagFragmentShader::sm_Device = this->m_pDevice;
-		lagVertexBuffer::sm_Device = this->m_pDevice;
+		GetDevice = __GetDevice;
+		lagShaderCompiler::InitClass();
+	}
 
+	void SetupConstantBuffer() {
+		D3D11_BUFFER_DESC Desc{};
+		Desc.Usage = D3D11_USAGE_DYNAMIC; // DYNAMIC BUFFER
+		Desc.ByteWidth = sizeof(Constant);
+		Desc.BindFlags = D3D11_BIND_FLAG::D3D11_BIND_CONSTANT_BUFFER;
+		Desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+		Desc.StructureByteStride = 0;
+		Desc.MiscFlags = 0; // We do not have misc flags. 
+		HRESULT hr = 
+		hr = m_pDevice->CreateBuffer(&Desc, nullptr, &m_ConstantBuffer);
+		if (FAILED(hr)) {
+			std::cout << "Buffer could not make constant buffer. " << hr << "\n\0";
+			//CApplication::Get().GetWindow()->g_Close = true;
+			return;
+		}
+	}
+	void UpdateCameraPosition() { // Probably add an ImGui module to this or just make it dependent on the KB but because you don't have that abstraction yet, I recommend the ImGui route. . 
+		
 	}
 	void Init(const CWindow* wind) {
 		auto devs = sOutDevice::Init(wind->GetWindowHandle());
@@ -486,6 +714,11 @@ public:
 		this->m_pContext = devs->m_pContext;
 		delete devs; // devs does not exist anymore. 
 		InitDeviceLayer();
+		m_MyCube = new CMyCube();
+		m_Camera = new camCamera();
+
+		m_Camera->m_fFarZ = 800.0f; 
+
 		HRESULT hr{};
 		ID3D11Buffer* m_Backbuffer = nullptr;
 		hr = m_pSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&m_Backbuffer));
@@ -510,8 +743,6 @@ public:
 		viewport.Width = rc.right - rc.left;
 		viewport.Height = rc.bottom - rc.top;
 		m_pContext->RSSetViewports(1, &viewport);
-		m_VertexBuffer = new lagVertexBuffer();
-
 
 		D3D11_RASTERIZER_DESC rastDesc{};
 		rastDesc.FillMode = D3D11_FILL_SOLID;
@@ -523,7 +754,7 @@ public:
 
 		m_pContext->RSSetState(rastState);
 
-
+		SetupConstantBuffer();
 		if (FAILED(hr)) {
 			std::cout << "[BUFFER]" << hr << std::endl;
 			return;
@@ -532,68 +763,66 @@ public:
 	} 
 
 	void CompileShaders() {
-		HRESULT hr;
-		m_VertexShader = new lagVertexShader(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\vs.hlsl", "main", D3DCOMPILE_DEBUG);
-		m_FragShader = new lagFragmentShader(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\ps.hlsl", "Main", D3DCOMPILE_DEBUG);
-		D3D11_INPUT_ELEMENT_DESC element1{};
-		element1.SemanticName = "POSITION";
-		element1.SemanticIndex = 0;
-		element1.Format = DXGI_FORMAT_R32G32B32_FLOAT;
-		element1.InputSlot = 0;
-		element1.AlignedByteOffset = 0;
-		element1.InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
-		element1.InstanceDataStepRate = 0;
-		D3D11_INPUT_ELEMENT_DESC element2{};
-		element2.SemanticName = "COLOR";
-		element2.SemanticIndex = 0;
-		element2.Format = DXGI_FORMAT_R32G32B32_FLOAT;
-		element2.InputSlot = 0;
-		element2.AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT; // im sure this won't cause issues. (foreshadowing)
-		element2.InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
-		element2.InstanceDataStepRate = 0;
-
-		D3D11_INPUT_ELEMENT_DESC Desc[2] = { element1, element2 }; 
-		hr = m_pDevice->CreateInputLayout(Desc, 2, m_VertexShader->GetBlob()->GetBufferPointer(), m_VertexShader->GetBlob()->GetBufferSize(), &m_Layout); // 
-		if (FAILED(hr)) {
-			std::cout << hr << std::endl;
-			return;
-		}
+		lagShaderBytecode VS = lagShaderCompiler::Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\vs.hlsl", "main", "vs_5_0", D3DCOMPILE_DEBUG);
+		m_VertexShader = new lagVertexShader(VS);
+		lagShaderBytecode PS = lagShaderCompiler::Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\ps.hlsl", "Main", "ps_5_0", D3DCOMPILE_DEBUG);
+		m_FragShader = new lagFragmentShader(PS);
+		m_InputAssembler = new lagInputAssembler(VS);
 	}
 	
 	void Update() {
+
+		UpdateCameraPosition();
 		const float m_fClear[4] = { 0.145,0.145,0.16,1.0f };
 		m_pContext->ClearRenderTargetView(m_View, m_fClear);
-		m_VertexBuffer->Bind(m_pContext); 
 
 		m_pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // ?
-		m_pContext->IASetInputLayout(m_Layout);
-
+		m_pContext->IASetInputLayout(m_InputAssembler->GetLayout());
 		m_pContext->PSSetShader(this->m_FragShader->GetShader(), nullptr, 0); // Signature Similar?
 		m_pContext->VSSetShader(this->m_VertexShader->GetShader(), nullptr, 0);
-		//test.
-		m_pContext->Draw(3, 0);
+		
+		D3D11_MAPPED_SUBRESOURCE Res{};
+		m_pContext->Map(m_ConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &Res);
+		Constant constant{};
+		constant.m_Model = m_MyCube->GetMtx(); // This is based on the Object.
+		constant.m_View = m_Camera->WhatWeLookingAt(); // This is based on the Camera
+		float fAspect = viewport.Width / viewport.Height; 
+		constant.m_Projection = m_Camera->GetPerspectiveMtx(fAspect); // This is based on the Camera && Display.
+
+		constant.m_Model = XMMatrixTranspose(constant.m_Model);
+		constant.m_View = XMMatrixTranspose(constant.m_View);
+		constant.m_Projection = XMMatrixTranspose(constant.m_Projection);
+
+
+		memcpy(Res.pData, &constant, sizeof(Constant));
+		
+		
+		m_pContext->Unmap(m_ConstantBuffer, 0); // Subresource could be wrong.
+		m_pContext->VSSetConstantBuffers(0, 1, &m_ConstantBuffer);
+		m_MyCube->Draw(m_pContext);
+
 		m_pSwapChain->Present(1, 0);
 	}
 	void Shutdown() {
-		delete m_VertexBuffer;
+		lagShaderCompiler::DestroyClass();
 		delete m_VertexShader;
 		delete m_FragShader;
+		delete m_MyCube;
+		delete m_Camera;
 		if(m_View) m_View->Release();
 		if(m_pDevice) m_pDevice->Release();
 		if(m_pSwapChain) m_pSwapChain->Release();
 		if(m_pContext) m_pContext->Release();
 	}
 private:
-	const Vertex vertices[3] = {
-		{{ -0.5f, -0.5f, 0.0f}, {1.0,0,0}},
-		{ {0.0f,  0.5f, 0.0f}, {0,1.0,0} },
-		{{0.5f, -0.5f, 0.0f}, {0.0,0,1.0}},
-	};
-	ID3D11InputLayout* m_Layout = nullptr;
+	ID3D11Buffer* m_ConstantBuffer;
 	
+	camCamera* m_Camera = nullptr; // this is not entirely relevent to the renderer. 
+
+	lagInputAssembler* m_InputAssembler = nullptr;
 	lagVertexShader* m_VertexShader = nullptr;
 	lagFragmentShader* m_FragShader = nullptr;
-	lagVertexBuffer* m_VertexBuffer = nullptr;
+	CMyCube* m_MyCube = nullptr;
 
 	D3D11_VIEWPORT viewport;
 	ID3D11RenderTargetView* m_View = nullptr;
