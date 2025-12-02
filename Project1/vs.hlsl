@@ -1,7 +1,7 @@
 struct VSIn
 {
-    float3 vPosition : POSITION;
-    float3 Col : COLOR;
+    float3 vPosition : POSITION0;
+    float4 vColor : COLOR0;
 };
 
 cbuffer Transform : register(b0) // BUFFER 0 
@@ -14,7 +14,7 @@ cbuffer Transform : register(b0) // BUFFER 0
 struct VertexOut
 {
     float4 Pos : SV_Position;
-    float3 Col : COLOR;
+    float4 Col : COLOR0;
 };
 
 VertexOut main(VSIn IO) 
@@ -28,7 +28,7 @@ VertexOut main(VSIn IO)
     float4 projPos = mul(viewPos, m_Projection);
 
     output.Pos = projPos;
-    output.Col = IO.Col;
+    output.Col = IO.vColor;
 
     return output;
 }

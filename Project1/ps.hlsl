@@ -1,7 +1,7 @@
 struct PSInput
 {
 	float4 Pos : SV_Position;
-    float3 Col : COLOR;
+    float4 Col : COLOR;
 };
 struct PSOut
 {
@@ -11,7 +11,6 @@ struct PSOut
 PSOut Main(PSInput input)
 {
 	PSOut output = (PSOut) 0;
-	output.color = float4(input.Col, 1.0); // This is for white.
-	
+	output.color = input.Col; // This is for white.
 	return output;
 }
