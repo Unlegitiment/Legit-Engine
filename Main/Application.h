@@ -9,6 +9,23 @@
 #include <array>
 #include "Logger/GameLogger.h"
 
+
+
+/*
+* Scene Graphs are not as complicated as you make them out to be. Every specific entity (CMyCube) has to have an attached entity to it. This is its children and thus effected by ITS Translations.
+* So as an example this could be a definition of CMyCube:
+* class CMyCube{
+* ... Rendering Tech
+* private:
+*	std::vector<CMyCube*> m_Children;
+* public:
+*	std::vector<CMyCube*> GetChildren() { return m_Children; }
+* };
+* Then what is necessary is modifying attached objects in relevence to the base object. So for example a tyre on a vehicle might have a definition in which its a Child of the Cube.
+* But When the Cube/Vehicle is created and the Cube moves. the Child has to update its positional vector as well. (if this makes sense!) So whereas a cube's definition might define {0,0,0} and a tyre's offset would be {1, 0, 1} (as an example of FRONT_LEFT_TYRE). This means that in global space it gets transfered and moved around with this included in mind so that its ALWAYS moving with positional changes. 
+* I thought it was more complex but looking at Unreal and Unity it just shows me that when you make an Entity it has children. The children must exist somewhere else it wouldn't work with the Scene Graph System.
+* Very confusing but actually kinda also not confusing. probably next though will be a vehicle MAYBE! Or something that enforces multiple entities in relevence to another. (we can also see this visually in Blender!)
+*/
 class baseRawInputDevice {
 public:
 	virtual unsigned int GetFlags() = 0;
@@ -410,7 +427,9 @@ private:
 };
 
 using DeviceSignature = ID3D11Device * (*)();
+using ContextSignature = ID3D11DeviceContext* (*)();
 static DeviceSignature GetDevice;
+static ContextSignature GetContext;
 //If blobs are not useful past the compile stage and the Input Assembler might scrap the in-class definition for compiling shaders and put it into a different object. 
 class lagVertexShader {
 public:
@@ -649,6 +668,43 @@ private:
 	ID3D11Buffer* m_Buffer = nullptr;
 	size_t m_iDataSize = 0;
 };
+struct Constant {
+	DirectX::XMMATRIX m_Projection;
+	DirectX::XMMATRIX m_View;
+	DirectX::XMMATRIX m_Model;
+};
+class lagConstantBuffer {
+public:
+	lagConstantBuffer() {
+		D3D11_BUFFER_DESC Desc{};
+		Desc.Usage = D3D11_USAGE_DYNAMIC; // DYNAMIC BUFFER
+		Desc.ByteWidth = sizeof(Constant);
+		Desc.BindFlags = D3D11_BIND_FLAG::D3D11_BIND_CONSTANT_BUFFER;
+		Desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+		Desc.StructureByteStride = 0;
+		Desc.MiscFlags = 0; // We do not have misc flags. 
+		GetDevice()->CreateBuffer(&Desc, NULL, &m_Buffer); 
+	}
+	Constant* Map(D3D11_MAP MapType = D3D11_MAP_WRITE_DISCARD, UINT MapFlags = 0) {
+		D3D11_MAPPED_SUBRESOURCE Res{};
+		GetContext()->Map(m_Buffer, 0, MapType, MapFlags, &Res);
+		return (Constant*)Res.pData;
+	}
+	void Unmap() {
+		GetContext()->Unmap(m_Buffer, 0);
+	}
+	ID3D11Buffer* GetBuffer() {
+		return m_Buffer;
+	}
+	ID3D11Buffer** GetBufferPtr() {
+		return &m_Buffer;
+	}
+	~lagConstantBuffer() {
+		if (m_Buffer) m_Buffer->Release();
+	}
+private:
+	ID3D11Buffer* m_Buffer = nullptr;
+};
 class CMyCube {
 public:
 	CMyCube() {
@@ -658,6 +714,8 @@ public:
 		this->m_IB = new lagIndexBuffer(cpuIb.data(), cpuIb.size());
 		m_LocalMtx = DirectX::XMMatrixTranslation(0, 5, 0);
 		InitVertexInformation();
+		m_Buffer = new lagConstantBuffer();
+
 	}
 	void InitVertexInformation() {
 		lagShaderBytecode VS = lagShaderCompiler::Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\vs.hlsl", "main", "vs_5_0", D3DCOMPILE_DEBUG);
@@ -669,14 +727,21 @@ public:
 	DirectX::XMMATRIX& GetMtx() {
 		return m_LocalMtx;
 	}
+	lagConstantBuffer* GetBuffer() {
+		return this->m_Buffer;
+	}
 	void Draw(ID3D11DeviceContext* pContext) {
 		const UINT stride = sizeof Vertex;
 		const UINT offset = 0;
 
 		pContext->IASetInputLayout(m_InputAssembler->GetLayout());
 		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // I would assume.
+		
 		pContext->PSSetShader(this->m_FragShader->GetShader(), nullptr, 0); // Signature Similar?
+		
 		pContext->VSSetShader(this->m_VertexShader->GetShader(), nullptr, 0);
+		pContext->VSSetConstantBuffers(0, 1, m_Buffer->GetBufferPtr());
+		
 		pContext->IASetVertexBuffers(0,1,this->m_VB->GetBufferPtr(), &stride, &offset);
 		pContext->IASetIndexBuffer(this->m_IB->GetBuffer(), DXGI_FORMAT_R32_UINT, 0); // I would assume thats the type lmao.
 		pContext->DrawIndexed(m_IB->GetSize(), 0, 0); // test.
@@ -700,19 +765,7 @@ private:
 				aiVector3D v3D = mesh->mVertices[i];
 				Vertex v{};
 				v.m_Positions = { v3D.x, v3D.y, v3D.z };
-
-				if (i % 3) {
-					v.m_Color = { 1.0,0,0,1.0 };
-				}
-				else if (i % 2) {
-					v.m_Color = { 0,1.0,0,1.0 };
-				}
-				else if (i % 1) {
-					v.m_Color = { 0,0,1.0,1.0 };
-				}
-				else {
-					v.m_Color = { 1.0,1.0,1.0,1.0 };
-				}
+				v.m_Color = { 1.0,1.0,1.0,1.0 };
 				Mesh.push_back(v);
 			}
 			return Mesh;
@@ -746,15 +799,12 @@ private:
 		VertexDeclaration<eVertexNames::POSITION, eVertexType::VECTOR3, 0>,
 		VertexDeclaration<eVertexNames::COLOR, eVertexType::VECTOR4, 0>
 	> m_Type;
+	lagConstantBuffer* m_Buffer = nullptr;
 	lagInputAssembler* m_InputAssembler = nullptr;
 	lagVertexBuffer* m_VB = nullptr;
 	lagIndexBuffer* m_IB = nullptr;
 };
-struct Constant {
-	DirectX::XMMATRIX m_Projection;
-	DirectX::XMMATRIX m_View;
-	DirectX::XMMATRIX m_Model;
-};
+
 class camCamera{
 public:
 	camCamera() {
@@ -789,26 +839,30 @@ public:
 	static ID3D11Device* __GetDevice() {
 		return Get().m_pDevice;
 	}
+	static ID3D11DeviceContext* __GetContext() {
+		return Get().m_pContext;
+	}
 	void InitDeviceLayer() {
 		GetDevice = __GetDevice;
+		GetContext = __GetContext;
 		lagShaderCompiler::InitClass();
 	}
 
 	void SetupConstantBuffer() {
-		D3D11_BUFFER_DESC Desc{};
-		Desc.Usage = D3D11_USAGE_DYNAMIC; // DYNAMIC BUFFER
-		Desc.ByteWidth = sizeof(Constant);
-		Desc.BindFlags = D3D11_BIND_FLAG::D3D11_BIND_CONSTANT_BUFFER;
-		Desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-		Desc.StructureByteStride = 0;
-		Desc.MiscFlags = 0; // We do not have misc flags. 
-		HRESULT hr;
-		hr = m_pDevice->CreateBuffer(&Desc, nullptr, &m_ConstantBuffer);
-		if (FAILED(hr)) {
-			std::cout << "Buffer could not make constant buffer. " << hr << "\n\0";
-			//CApplication::Get().GetWindow()->g_Close = true;
-			return;
-		}
+		//D3D11_BUFFER_DESC Desc{};
+		//Desc.Usage = D3D11_USAGE_DYNAMIC; // DYNAMIC BUFFER
+		//Desc.ByteWidth = sizeof(Constant);
+		//Desc.BindFlags = D3D11_BIND_FLAG::D3D11_BIND_CONSTANT_BUFFER;
+		//Desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+		//Desc.StructureByteStride = 0;
+		//Desc.MiscFlags = 0; // We do not have misc flags. 
+		//HRESULT hr;
+		//hr = m_pDevice->CreateBuffer(&Desc, nullptr, &m_ConstantBuffer);
+		//if (FAILED(hr)) {
+		//	std::cout << "Buffer could not make constant buffer. " << hr << "\n\0";
+		//	//CApplication::Get().GetWindow()->g_Close = true;
+		//	return;
+		//}
 	}
 	void UpdateCameraPosition() { // Probably add an ImGui module to this or just make it dependent on the KB but because you don't have that abstraction yet, I recommend the ImGui route. . 
 		
@@ -821,12 +875,16 @@ public:
 		delete devs; // devs does not exist anymore. 
 		InitDeviceLayer();
 		m_MyCube = new CMyCube();
-		m_Camera = new camCamera();
 
+		m_Cube2 = new CMyCube();
+
+		m_Camera = new camCamera();
 		m_Camera->m_fFarZ = 800.0f; 
 
 		HRESULT hr{};
-		ID3D11Buffer* m_Backbuffer = nullptr;
+
+		ID3D11Texture2D* m_Backbuffer = nullptr;
+
 		hr = m_pSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), reinterpret_cast<void**>(&m_Backbuffer));
 		if (FAILED(hr)) {
 			std::cout << "could not get bb" << hr;
@@ -838,8 +896,33 @@ public:
 			m_Backbuffer->Release();
 			return;
 		}
+		/* 
+		* Slowly getting to textures is scary but I think it'll be fun once I can understand how they work and allat. 
+		*/
+		D3D11_TEXTURE2D_DESC depthBufferDesc{};
+		m_Backbuffer->GetDesc(&depthBufferDesc);
+		depthBufferDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+		depthBufferDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+
+		ID3D11Texture2D* depthBuffer{};
+		m_pDevice->CreateTexture2D(&depthBufferDesc, nullptr, &depthBuffer);
+		DepthView = {};
+		hr = m_pDevice->CreateDepthStencilView(depthBuffer, nullptr, &DepthView);
+
+		D3D11_DEPTH_STENCIL_DESC depthstencildesc = {};
+		depthstencildesc.DepthEnable = TRUE;
+		depthstencildesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+		depthstencildesc.DepthFunc = D3D11_COMPARISON_LESS;
+
+
+		m_pDevice->CreateDepthStencilState(&depthstencildesc, &DepthStencilState);
+		if (FAILED(hr)) {
+			std::cout << "[BACKBUFFER_ACCESS]: ID3D11DepthStencilView failed to Create!" << hr << "\n\0";
+			__debugbreak();
+			return;
+		}
+		m_pContext->OMSetRenderTargets(1, &m_View, DepthView); // NO DEPTH.
 		m_Backbuffer->Release();
-		m_pContext->OMSetRenderTargets(1, &m_View, NULL); // NO DEPTH.
 		ZeroMemory(&viewport, sizeof(D3D11_VIEWPORT));
 
 		viewport.TopLeftX = 0;
@@ -865,6 +948,8 @@ public:
 		}
 		CompileShaders();
 	} 
+	ID3D11DepthStencilView* DepthView{};
+	ID3D11DepthStencilState* DepthStencilState{};
 
 	void CompileShaders() {
 
@@ -875,24 +960,50 @@ public:
 		UpdateCameraPosition();
 		const float m_fClear[4] = { 0.145,0.145,0.16,1.0f };
 		m_pContext->ClearRenderTargetView(m_View, m_fClear);
+
+		//@TODO: Learn more about these!!!
+		m_pContext->ClearDepthStencilView(DepthView, D3D11_CLEAR_DEPTH, 1.0, 0);
+		m_pContext->OMSetDepthStencilState(DepthStencilState, 0); 
 		
-		D3D11_MAPPED_SUBRESOURCE Res{};
-		m_pContext->Map(m_ConstantBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &Res);
+		
+		Constant* pConst = m_MyCube->GetBuffer()->Map();
 
 		Constant constant{};
+
 		constant.m_Model = m_MyCube->GetMtx(); // This is based on the Object.
 		constant.m_View = m_Camera->WhatWeLookingAt(); // This is based on the Camera
 		float fAspect = viewport.Width / viewport.Height; 
 		constant.m_Projection = m_Camera->GetPerspectiveMtx(fAspect); // This is based on the Camera && Display.
+
 		constant.m_Model = XMMatrixTranspose(constant.m_Model);
 		constant.m_View = XMMatrixTranspose(constant.m_View);
 		constant.m_Projection = XMMatrixTranspose(constant.m_Projection);
-		memcpy(Res.pData, &constant, sizeof(Constant));
 
-		m_pContext->Unmap(m_ConstantBuffer, 0); // Subresource could be wrong.
-		m_pContext->VSSetConstantBuffers(0, 1, &m_ConstantBuffer);
+		memcpy(pConst, &constant, sizeof(Constant));
+
+		m_MyCube->GetBuffer()->Unmap();
 
 		m_MyCube->Draw(m_pContext);
+
+
+		pConst = m_Cube2->GetBuffer()->Map();
+
+		constant = {};
+		m_Cube2->GetMtx() = DirectX::XMMatrixTranslation(0, 2, -1);
+
+		constant.m_Model = m_Cube2->GetMtx(); // This is based on the Object.
+		constant.m_View = m_Camera->WhatWeLookingAt(); // This is based on the Camera
+		
+		fAspect = viewport.Width / viewport.Height;
+		constant.m_Projection = m_Camera->GetPerspectiveMtx(fAspect); // This is based on the Camera && Display.
+		constant.m_Model = XMMatrixTranspose(constant.m_Model);
+		constant.m_View = XMMatrixTranspose(constant.m_View);
+		constant.m_Projection = XMMatrixTranspose(constant.m_Projection);
+
+		memcpy(pConst, &constant, sizeof(Constant));
+
+		m_Cube2->GetBuffer()->Unmap();
+		m_Cube2->Draw(m_pContext);
 
 		m_pSwapChain->Present(1, 0);
 	}
@@ -906,11 +1017,12 @@ public:
 		if(m_pContext) m_pContext->Release();
 	}
 private:
-	ID3D11Buffer* m_ConstantBuffer;
 	camCamera* m_Camera = nullptr; // this is not entirely relevent to the renderer. 
 
 
 	CMyCube* m_MyCube = nullptr;
+
+	CMyCube* m_Cube2 = nullptr;
 
 	D3D11_VIEWPORT viewport;
 	ID3D11RenderTargetView* m_View = nullptr;
