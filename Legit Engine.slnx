@@ -12,5 +12,6 @@
   <Folder Name="/Tests/">
     <Project Path="Main/Main.vcxproj" Id="ecf33edb-a025-4f05-a684-8b6fbadf331a" />
     <Project Path="Project1/Project1.vcxproj" Id="31bd9c68-2baa-4b7e-9859-df38e9aac13f" />
+    <Project Path="simple_assimp/simple_assimp.vcxproj" Id="c4be5a8f-3de6-40e5-bc4c-0a980211b412" />
   </Folder>
 </Solution>

@@ -9,8 +9,6 @@
 #include <array>
 #include "Logger/GameLogger.h"
 
-
-
 /*
 * Scene Graphs are not as complicated as you make them out to be. Every specific entity (CMyCube) has to have an attached entity to it. This is its children and thus effected by ITS Translations.
 * So as an example this could be a definition of CMyCube:
@@ -26,160 +24,7 @@
 * I thought it was more complex but looking at Unreal and Unity it just shows me that when you make an Entity it has children. The children must exist somewhere else it wouldn't work with the Scene Graph System.
 * Very confusing but actually kinda also not confusing. probably next though will be a vehicle MAYBE! Or something that enforces multiple entities in relevence to another. (we can also see this visually in Blender!)
 */
-class baseRawInputDevice {
-public:
-	virtual unsigned int GetFlags() = 0;
-	virtual HWND GetTargetWindow() = 0;
-	virtual unsigned short GetUsage() = 0;
-	virtual unsigned short GetUsagePage() { return 0x01; }
-	virtual unsigned long GetRIMType() = 0;
-	virtual void OnInput(RAWINPUT* param) = 0;
-	virtual RAWINPUTDEVICE GetDevice() {
-		RAWINPUTDEVICE ret{};
-		ret.usUsage = GetUsage();
-		ret.usUsagePage = GetUsagePage();
-		ret.hwndTarget = GetTargetWindow();
-		ret.dwFlags = GetFlags();
-		return ret;
-	}
-};
 
-
-class CMouse {
-public:
-	static void InitClass() {
-		sm_pMouse = new CMouse();
-	}
-	static CMouse* Get() {
-		if (!sm_pMouse) {
-			std::cout << "[CMouse] Mouse does not exist. You cannot use it here.";
-			return nullptr;
-		}
-		return sm_pMouse;
-	}
-	static void Shutdown() {
-		delete sm_pMouse;
-	}
-private:
-	static inline CMouse* sm_pMouse = nullptr;
-public:
-	CMouse() {
-
-	}
-	void SetPosition(float fMouseX, float fMouseY) {
-		this->m_Position.x = fMouseX;
-		this->m_Position.y = fMouseY;
-	}
-	legit::Vector2f GetPosition() const { return m_Position; } 
-
-	~CMouse() {
-
-	}
-private:
-	legit::Vector2f m_Position;
-};
-class CRawInputMouse : public baseRawInputDevice {
-public:
-	CRawInputMouse() = default;
-	CRawInputMouse(HWND wnd) :m_Window(wnd){
-
-	}
-	unsigned int GetFlags() override
-	{
-		return 0;
-	}
-	HWND GetTargetWindow() override
-	{
-		return m_Window;
-	}
-	unsigned short GetUsage() override
-	{
-		return 0x02;
-	}
-	unsigned long GetRIMType() {
-		return RIM_TYPEMOUSE;
-	}
-	void OnInput(RAWINPUT* param) override
-	{
-		auto x = param->data.mouse.lLastX;
-		auto y = param->data.mouse.lLastY;
-		auto currentPos = CMouse::Get()->GetPosition();
-		currentPos.x += x;
-		currentPos.y += y;
-		CMouse::Get()->SetPosition(currentPos.x, currentPos.y);
-		//std::cout << "[CRawMouse] Mouse Interacted with. lLastX: "<< currentPos.x  << " lLastY: " << currentPos.y << std::endl;
-	}
-private:
-	HWND m_Window = NULL;
-};
-class CRawInput{
-public:
-	static constexpr int STD_IO_DRV = 0x01;
-	static constexpr int MOUSE_ID = 0x02;
-	static constexpr int KB_ID = 0x06;
-	CRawInput() = default;
-	CRawInput(const std::vector<baseRawInputDevice*>& devs) {
-		this->m_Device = devs;
-		Init();
-	}
-	std::vector<baseRawInputDevice*>& GetDevices() { return this->m_Device; }
-	void Init() {
-		if (m_Device.empty()) return; // there is no devices.
-		RAWINPUTDEVICE* dev = new RAWINPUTDEVICE[m_Device.size()];
-		for (int i = 0; i < m_Device.size(); i++) {
-			auto& dat = m_Device[i];
-			dev[i] = dat->GetDevice();
-		}
-		if (RegisterRawInputDevices(dev, m_Device.size(), sizeof(dev[0])) == FALSE) {
-			std::cout << "[rawinput] failed to register input device: " << GetLastError() << std::endl;
-		}
-
-		delete[] dev;
-	}
-	void Update(WPARAM wParam, LPARAM lParam) {
-		{
-			HRESULT hResult{};
-			UINT dwSize{};
-
-			GetRawInputData((HRAWINPUT)lParam, RID_INPUT, NULL, &dwSize, sizeof(RAWINPUTHEADER));
-			LPBYTE lpb = new BYTE[dwSize]; // This is done consistently. Not very good. 
-
-			if (GetRawInputData((HRAWINPUT)lParam, RID_INPUT, lpb, &dwSize, sizeof(RAWINPUTHEADER)) != dwSize)
-				OutputDebugString(TEXT("GetRawInputData does not return correct size !\n"));
-
-			RAWINPUT* raw = (RAWINPUT*)lpb;
-			for (auto& dev : m_Device) {
-				if (raw->header.dwType == dev->GetRIMType()) {
-					dev->OnInput(raw);
-				}
-			}
-			delete[] lpb;
-			return;
-		}
-	}
-	~CRawInput() {
-		m_Device.clear();
-	}
-protected:
-
-private:
-	std::vector<baseRawInputDevice*> m_Device;
-};
-class CRawInputProviders {
-public:
-	CRawInputProviders() {
-
-	}
-	CRawInputMouse* GetMouse() { return &m_Mouse; }
-	std::vector<baseRawInputDevice*> GetInputDevices() {
-		return { &m_Mouse };
-	}
-	~CRawInputProviders() {
-	
-	}
-private:
-	CRawInputMouse m_Mouse{};
-};
 struct WindowEventParams {
 public:
 	WPARAM wParam;
@@ -258,43 +103,11 @@ private:
 	std::unordered_map<legit::u32, std::vector<WindowsCallbackSignature>> MsgToCb;
 	std::unordered_map<legit::u32, WindowEventParams> m_Params;
 };
-class CControls {
-public:
-	enum eInputMode {
-		RAW_INPUT,
-		DIRECT_INPUT,
-		WINDOWS_STD
-	};
-	static void Init() {
-		CMouse::InitClass();
-		sm_pInputProviders = new CRawInputProviders();
-		m_Input = new CRawInput(sm_pInputProviders->GetInputDevices());
-		CWindowEvents::Get()->Subscribe(WM_INPUT, [](const WindowEventParams& evt)->void {
-			CControls::WM_EVENT_LISTENER(evt.wParam, evt.lParam);
-			//std::cout << "using callback" << std::endl;
-			});
-	}
-	static void WM_EVENT_LISTENER(WPARAM wParam, LPARAM lParam) {
-		GetRawInput()->Update(wParam, lParam);
-	}
-	static CRawInput* GetRawInput() {
-		return m_Input;
-	}
-	static void Shutdown() {
-		delete m_Input; m_Input = nullptr;
-		delete sm_pInputProviders; sm_pInputProviders = nullptr;
-		CMouse::Shutdown();
-	}
-private:
-	static inline CRawInputProviders* sm_pInputProviders = nullptr;
-	static inline CRawInput* m_Input = nullptr;
-};
 class CMainWindow{
 public:
 	CMainWindow(CWinArgs* args) : m_Window(args, L"lagWindow", L"GameWin32.exe", WindowProc) {
 		m_pWindow = this;
 		ShowWindow(m_Window.GetWindowHandle(), m_Window.GetWindowArgs()->GetCmdShow());
-		CControls::Init();
 	}
 	bool g_Close = false;
 	static LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -311,7 +124,6 @@ public:
 	}
 	~CMainWindow() {
 		CloseWindow(m_Window.GetWindowHandle());
-		CControls::Shutdown();
 		CWindowEvents::ShutdownClass(); // check.
 	}
 	static CMainWindow& Get() {
@@ -425,7 +237,6 @@ public:
 private:
 	static inline lagCompilerDX11* sm_Compiler;
 };
-
 using DeviceSignature = ID3D11Device * (*)();
 using ContextSignature = ID3D11DeviceContext* (*)();
 static DeviceSignature GetDevice;
@@ -493,33 +304,6 @@ public:
 			return;
 		}
 	}
-	lagInputAssembler(const lagShaderBytecode& VS) {
-		HRESULT hr;
-		D3D11_INPUT_ELEMENT_DESC element1{};
-		element1.SemanticName = "POSITION";
-		element1.SemanticIndex = 0;
-		element1.Format = DXGI_FORMAT_R32G32B32_FLOAT;
-		element1.InputSlot = 0;
-		element1.AlignedByteOffset = 0;
-		element1.InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
-		element1.InstanceDataStepRate = 0;
-
-		D3D11_INPUT_ELEMENT_DESC element2{};
-		element2.SemanticName = "COLOR";
-		element2.SemanticIndex = 0;
-		element2.Format = DXGI_FORMAT_R32G32B32_FLOAT;
-		element2.InputSlot = 0;
-		element2.AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT;
-		element2.InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
-		element2.InstanceDataStepRate = 0;
-
-		D3D11_INPUT_ELEMENT_DESC Desc[2] = { element1, element2 };
-		hr = GetDevice()->CreateInputLayout(Desc, 2, VS.GetByte(), VS.GetSize(), &m_Layout); // 
-		if (FAILED(hr)) {
-			std::cout << hr << std::endl;
-			return;
-		}
-	}
 	ID3D11InputLayout* GetLayout() {
 		return m_Layout;
 	}
@@ -564,13 +348,13 @@ enum class eVertexNames {
 	POSITION,
 	COLOR,
 };
+inline constexpr const char* VERTEX_NAMES[] = {
+	"POSITION",
+	"COLOR",
+};
 template<eVertexNames PRIM> struct VrtxToStr {
-	static constexpr const char* NAMES[] = {
-		"POSITION",
-		"COLOR",
-	};
 	static constexpr const char* GetName() {
-		return NAMES[(int)PRIM];
+		return VERTEX_NAMES[(int)PRIM];
 	}
 };
 template<eVertexNames NAME, eVertexType T, int Index>
@@ -705,12 +489,33 @@ public:
 private:
 	ID3D11Buffer* m_Buffer = nullptr;
 };
+
+// Synopsis from Chili's Video. Scene graphs are only for per-object translations. Meaning that Scene Graphs != Meshes individually. 
+// Scene graphs only represent like for example, how a certain model moves. 
+class CMesh {
+public:
+	CMesh(const aiMesh* scene) {
+		
+	}
+private:
+	
+};
+class CModel {
+public:
+	void MakeModel(const aiScene* scene) {
+
+	}
+private:
+	std::vector<CMesh> m_Mesh;
+};
 class CMyCube {
 public:
 	CMyCube() {
-		auto m_CPUVb = MakeModel();
-		this->m_VB = new lagVertexBuffer(m_CPUVb.data(), m_CPUVb.size(), sizeof Vertex); // Type.
-		auto cpuIb = MakeIndices();
+		Assimp::Importer importer;
+		const aiScene* scene = importer.ReadFile("C:\\Users\\codyc\\OneDrive\\Docs from Gaming PC\\Documents\\TestModels\\object.obj", aiPostProcessSteps::aiProcess_Triangulate);
+		auto CPUVb = MakeModel(scene);
+		auto cpuIb = MakeIndices(scene);
+		this->m_VB = new lagVertexBuffer(CPUVb.data(), CPUVb.size(), sizeof Vertex); // Type.
 		this->m_IB = new lagIndexBuffer(cpuIb.data(), cpuIb.size());
 		m_LocalMtx = DirectX::XMMatrixTranslation(0, 5, 0);
 		InitVertexInformation();
@@ -736,9 +541,8 @@ public:
 
 		pContext->IASetInputLayout(m_InputAssembler->GetLayout());
 		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // I would assume.
-		
 		pContext->PSSetShader(this->m_FragShader->GetShader(), nullptr, 0); // Signature Similar?
-		
+
 		pContext->VSSetShader(this->m_VertexShader->GetShader(), nullptr, 0);
 		pContext->VSSetConstantBuffers(0, 1, m_Buffer->GetBufferPtr());
 		
@@ -755,9 +559,7 @@ public:
 	}
 private:
 	DirectX::XMMATRIX m_LocalMtx = DirectX::XMMatrixIdentity();
-	std::vector<Vertex> MakeModel() {
-		Assimp::Importer importer;
-		const aiScene* scene = importer.ReadFile("C:\\Users\\codyc\\OneDrive\\Docs from Gaming PC\\Documents\\TestModels\\object.obj", aiPostProcessSteps::aiProcess_Triangulate);
+	std::vector<Vertex> MakeModel(const aiScene* scene) {
 		if (scene->HasMeshes()) {
 			aiMesh* mesh = scene->mMeshes[0]; // Of course this is a static check because I already know how many models I have. Ideally I'd check this. 
 			std::vector<Vertex> Mesh;
@@ -773,9 +575,7 @@ private:
 		std::cout << "Scene does not have a mesh!\n\0";
 		return { };
 	}
-	std::vector<unsigned int> MakeIndices() {
-		Assimp::Importer importer;
-		const aiScene* scene = importer.ReadFile("C:\\Users\\codyc\\OneDrive\\Docs from Gaming PC\\Documents\\TestModels\\object.obj", aiPostProcessSteps::aiProcess_Triangulate);
+	std::vector<unsigned int> MakeIndices(const aiScene* scene) {
 		if (scene->HasMeshes()) {
 			aiMesh* mesh = scene->mMeshes[0]; // Of course this is a static check because I already know how many models I have. Ideally I'd check this. 
 			std::vector<unsigned int> Mesh;
