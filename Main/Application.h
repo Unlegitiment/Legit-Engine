@@ -103,6 +103,8 @@ private:
 	std::unordered_map<legit::u32, std::vector<WindowsCallbackSignature>> MsgToCb;
 	std::unordered_map<legit::u32, WindowEventParams> m_Params;
 };
+#include "imgui.h"
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 class CMainWindow{
 public:
 	CMainWindow(CWinArgs* args) : m_Window(args, L"lagWindow", L"GameWin32.exe", WindowProc) {
@@ -111,6 +113,9 @@ public:
 	}
 	bool g_Close = false;
 	static LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+		if (ImGui_ImplWin32_WndProcHandler(hwnd, uMsg, wParam, lParam)) {
+			return true;
+		}
 		HRESULT hResult{};
 		if (uMsg == WM_DESTROY) {
 			CMainWindow::Get().g_Close = true;
@@ -205,13 +210,22 @@ struct lagShaderBytecode {
 	}
 	std::vector<char> m_ByteCode;
 };
-
+#ifndef SHADER_MAIN
+	#define SHADER_MAIN "lagMain"
+#endif
 class lagCompilerDX11 {
 public:
 	lagShaderBytecode Compile(const wchar_t* path, const char* entryPoint, const char* ShaderVersion, UINT flags) {
 		ID3DBlob* ErrorBlob{},* Blob{};
 		HRESULT hr;
-		hr = D3DCompileFromFile(path, NULL, NULL, entryPoint, ShaderVersion, flags, 0, &Blob, &ErrorBlob); // This might be just static behavior. 
+		D3D_SHADER_MACRO macro{};
+		macro.Name = "LAG";
+		macro.Definition = SHADER_MAIN;
+		D3D_SHADER_MACRO Macros[] = {
+			macro,
+			{NULL, NULL}
+		};
+		hr = D3DCompileFromFile(path, Macros, NULL, entryPoint, ShaderVersion, flags, 0, &Blob, &ErrorBlob); // This might be just static behavior. 
 		if (FAILED(hr)) {
 			std::cout << "[lagCompilerDX11] " << ErrorBlob->GetBufferPointer() << std::endl;
 			ErrorBlob->Release();
@@ -293,7 +307,32 @@ public:
 private:
 	ID3D11PixelShader* m_ShaderProgram = nullptr;
 };
+enum class eValueShaderProgram { // These are the generics.
+	VERTEX,
+	FRAGMENT,
+	COMPUTE,
+	MAX
+};
+template<size_t N>
+struct FixedString {
+	char buf[N];
+	constexpr FixedString(const char(&str)[N]) {
+		for (size_t i = 0; i < N; ++i) buf[i] = str[i];
+	}
+};
+template<eValueShaderProgram prog> struct ShaderOfType {
+private:
+	DBG_ONLY(static constexpr const char* PRV[] = { "VERTEX","FRAGMENT","COMPUTE" };)
+public:
+	static constexpr eValueShaderProgram Val = prog;
+	DBG_ONLY(static constexpr const char* DebugName = PRV[(int)prog];)
+};
+template<typename T> struct ShaderType : public ShaderOfType<eValueShaderProgram::COMPUTE> {};
+template<typename T> struct ShaderType<T*> : public ShaderType<T>{
 
+};
+template<> struct ShaderType<lagVertexShader> : public ShaderOfType<eValueShaderProgram::VERTEX> {};
+template<> struct ShaderType<lagFragmentShader> : public ShaderOfType<eValueShaderProgram::FRAGMENT>{};
 class lagInputAssembler {
 public:
 	lagInputAssembler(const D3D11_INPUT_ELEMENT_DESC* pPtr, size_t Size, const lagShaderBytecode& VS) {
@@ -316,9 +355,10 @@ private:
 
 struct Vertex {
 	DirectX::XMFLOAT3 m_Positions;
-	DirectX::XMFLOAT4 m_Color;
+	DirectX::XMFLOAT2 m_Color;
 };
 enum class eVertexType {
+	VECTOR2,
 	VECTOR3,
 	VECTOR4,
 	MATRIX4X4,
@@ -329,36 +369,38 @@ template<eVertexType V> struct VertexBase {
 };
 template<typename T, DXGI_FORMAT F> struct VertexOfType {
 	using Type = T;
-	static constexpr int SizeOfType = sizeof (T);
+	static constexpr int SizeOfType = sizeof (Type);
 	static constexpr DXGI_FORMAT m_TypeFormat = F;
 };
-template<eVertexType T> struct VertexEvaluater{
-	using Type = void;
-	static constexpr VertexOfType<Type, DXGI_FORMAT::DXGI_FORMAT_UNKNOWN> VertexInformation;
+template<typename T, DXGI_FORMAT FORMAT>
+struct BaseEvaluator {
+	using Type = T;
+	static constexpr VertexOfType<Type, FORMAT> VertexInformation;
 };
-template<> struct VertexEvaluater<eVertexType::VECTOR3> {
-	using Type = DirectX::XMFLOAT3; 
-	static constexpr VertexOfType<Type, DXGI_FORMAT_R32G32B32_FLOAT> VertexInformation;
-};
-template<> struct VertexEvaluater<eVertexType::VECTOR4> {
-	using Type = DirectX::XMFLOAT4;
-	static constexpr VertexOfType<Type, DXGI_FORMAT_R32G32B32A32_FLOAT> VertexInformation;
-};
-enum class eVertexNames {
+template<eVertexType T> struct VertexEvaluater : public BaseEvaluator<void*, DXGI_FORMAT::DXGI_FORMAT_UNKNOWN> { static_assert(true && "Type is unknown, Unsafely casting to void ptr!"); };
+template<> struct VertexEvaluater<eVertexType::VECTOR2> : public BaseEvaluator<DirectX::XMFLOAT2, DXGI_FORMAT_R32G32_FLOAT>{ };
+template<> struct VertexEvaluater<eVertexType::VECTOR3> : public BaseEvaluator<DirectX::XMFLOAT3, DXGI_FORMAT_R32G32B32_FLOAT>{ };
+template<> struct VertexEvaluater<eVertexType::VECTOR4> : public BaseEvaluator<DirectX::XMFLOAT4, DXGI_FORMAT_R32G32B32A32_FLOAT>{ };
+
+enum class eStaticVertexNames {
 	POSITION,
 	COLOR,
+	UVCOORD,
+	SIZE_OF
 };
 inline constexpr const char* VERTEX_NAMES[] = {
 	"POSITION",
 	"COLOR",
+	"UVCOORD",
 };
-template<eVertexNames PRIM> struct VrtxToStr {
+static_assert((int)eStaticVertexNames::SIZE_OF == sizeof(VERTEX_NAMES)/sizeof(VERTEX_NAMES[0]) && "Not enough VERTEX_NAME formats");
+template<eStaticVertexNames PRIM> struct VrtxToStr {
 	static constexpr const char* GetName() {
 		return VERTEX_NAMES[(int)PRIM];
 	}
 };
-template<eVertexNames NAME, eVertexType T, int Index>
-struct VertexDeclaration {
+template<eStaticVertexNames NAME, eVertexType T, int Index>
+struct lagStaticVertexDeclaration {
 	static constexpr const char* ShaderName = VrtxToStr<NAME>::GetName(); // this fetches the name
 	static const eVertexType Type = T;
 	static constexpr int SemanicIndex = Index;
@@ -376,7 +418,7 @@ template<typename T> struct VertexFormatConversion {
 		return Description;
 	}
 };
-template<typename... V> struct VertexFormat {
+template<typename... V> struct lagStaticVertexFormat {
 	static lagInputAssembler* CreateLayout(const lagShaderBytecode& byteCode) {
 		constexpr std::array<D3D11_INPUT_ELEMENT_DESC, sizeof...(V)> arr = {
 			VertexFormatConversion<V>::GetDescription()...
@@ -384,6 +426,15 @@ template<typename... V> struct VertexFormat {
 		lagInputAssembler* m_InputLayout = new lagInputAssembler(arr.data(), arr.size(), byteCode);
 		return m_InputLayout;
 	}
+};
+template<eVertexType... Types> struct lagVertex {
+public:
+	template<eVertexType... Types>
+	lagVertex() {
+		auto size = (VertexEvaluater<Types>::Type)...
+	}
+private:
+	void* m_Buffer;
 };
 /*
 	VertexFormat<{"POSITION", eVertexType::VECTOR3}, {"COLOR", eVertexType::VECTOR4}> m_VertexFormat;
@@ -420,6 +471,7 @@ private:
 	size_t m_VertexSize;
 	ID3D11Buffer* m_VertexBuffer;
 };
+
 class lagIndexBuffer {
 public:
 	lagIndexBuffer(const unsigned int* Buffer, size_t iDataSize) {
@@ -492,42 +544,194 @@ private:
 
 // Synopsis from Chili's Video. Scene graphs are only for per-object translations. Meaning that Scene Graphs != Meshes individually. 
 // Scene graphs only represent like for example, how a certain model moves. 
+
+template<typename T> class vertBuffer : public lagVertexBuffer {
+public:
+	vertBuffer(std::vector<T> Vertices) : lagVertexBuffer(Vertices.data(), Vertices.size(), sizeof(T)) {}
+private:
+
+};
 class CMesh {
 public:
-	CMesh(const aiMesh* scene) {
-		
+	CMesh(std::vector<Vertex> Vertices, std::vector<unsigned int> Indices) : m_Vertices(Vertices), m_Indices(Indices.data(), Indices.size()){
+		std::cout << "Using CMESH\n\0";
 	}
-private:
-	
-};
-class CModel {
-public:
-	void MakeModel(const aiScene* scene) {
+	void Draw() {
+		UINT pStrides = sizeof(Vertex);
+		UINT pOffset = 0;
+		GetContext()->IASetVertexBuffers(0, 1, m_Vertices.GetBufferPtr(), &pStrides, &pOffset);
+		GetContext()->IASetIndexBuffer(m_Indices.GetBuffer(), DXGI_FORMAT_R32_UINT, 0); // I would assume thats the type lmao.
+		GetContext()->DrawIndexed(m_Indices.GetSize(), 0, 0);
+	}
+	~CMesh() {
 
 	}
 private:
-	std::vector<CMesh> m_Mesh;
+	vertBuffer<Vertex> m_Vertices;
+	lagIndexBuffer m_Indices;
 };
+class CModel{
+public:
+
+private:
+	std::vector<CMesh> m_Meshes;
+};
+#include "stb_image.h"
+class CSTBIImage {
+private:
+	static void Copy(CSTBIImage& self, const CSTBIImage& source) {
+		self.Channels = source.Channels;
+		self.Width = source.Width;
+		self.Height = source.Height;
+		size_t Size = static_cast<size_t>(self.Channels) * self.Width * self.Height;
+		self.m_Mem = new stbi_uc[Size];
+		memcpy(self.m_Mem, source.m_Mem, Size);
+	}
+	static void Move(CSTBIImage& self, CSTBIImage&& rhs) {
+		self.Channels = rhs.Channels;
+		self.Height = rhs.Height;
+		self.Width = rhs.Width;
+		self.m_Mem = rhs.m_Mem;
+		rhs.m_Mem = nullptr;
+	}
+public:
+	CSTBIImage(const char* path, int TargetedChannels) {
+		this->m_Mem = stbi_load(path, &this->Width, &this->Height, &Channels, TargetedChannels);
+	}
+	CSTBIImage(const CSTBIImage& image) noexcept : m_Mem(nullptr) {
+		Copy(*this, image);
+	}
+	CSTBIImage& operator=(const CSTBIImage&& image) noexcept {
+		Copy(*this, image);
+		return *this;
+	}
+	CSTBIImage(CSTBIImage&& rhs) noexcept {
+		Move(*this, std::forward<CSTBIImage>(rhs));
+	}
+	CSTBIImage& operator=(CSTBIImage&& rhs) noexcept {
+		Move(*this, std::forward<CSTBIImage>(rhs));
+		return *this;
+	}
+	int GetWidth() const {
+		return this->Width;
+	}
+	int GetHeight() const {
+		return this->Height;
+	}
+	int GetChannels() const {
+		return this->Channels;
+	}
+	stbi_uc* GetImage() {
+		return this->m_Mem;
+	}
+	~CSTBIImage() {
+		if (m_Mem) {
+			stbi_image_free(m_Mem);
+		}
+	}
+private:
+	int Width{}, Height{}, Channels{};
+	stbi_uc* m_Mem;
+};
+#include "thirdparty/imgui-dock/imgui.h"
+#include "thirdparty/imgui-dock/backends/imgui_impl_win32.h"
+#include "thirdparty/imgui-dock/backends/imgui_impl_dx11.h"
+
+class CDebug {
+public:
+	CDebug() {
+		IMGUI_CHECKVERSION();
+		ImGui::CreateContext();
+		ImGuiIO& io = ImGui::GetIO();
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_DockingEnable;
+		ImGui_ImplWin32_Init(CMainWindow::Get().GetRawWindow()->GetWindowHandle());
+		ImGui_ImplDX11_Init(GetDevice(), GetContext());
+	}
+	void BeginFrame() {
+		ImGui_ImplDX11_NewFrame();
+		ImGui_ImplWin32_NewFrame();
+		ImGui::NewFrame();
+
+	}
+	void EndFrame() {
+		ImGui::Render();
+		ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+	}
+	~CDebug() {
+		ImGui_ImplDX11_Shutdown();
+		ImGui_ImplWin32_Shutdown();
+		ImGui::DestroyContext();
+	}
+private:
+
+};
+
 class CMyCube {
 public:
 	CMyCube() {
 		Assimp::Importer importer;
-		const aiScene* scene = importer.ReadFile("C:\\Users\\codyc\\OneDrive\\Docs from Gaming PC\\Documents\\TestModels\\object.obj", aiPostProcessSteps::aiProcess_Triangulate);
+		const aiScene* scene = importer.ReadFile("C:\\Users\\codyc\\OneDrive\\Docs from Gaming PC\\Documents\\TestModels\\cube.obj", aiPostProcessSteps::aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_GenUVCoords);
 		auto CPUVb = MakeModel(scene);
 		auto cpuIb = MakeIndices(scene);
-		this->m_VB = new lagVertexBuffer(CPUVb.data(), CPUVb.size(), sizeof Vertex); // Type.
-		this->m_IB = new lagIndexBuffer(cpuIb.data(), cpuIb.size());
-		m_LocalMtx = DirectX::XMMatrixTranslation(0, 5, 0);
+		this->m_Mesh = new CMesh(CPUVb, cpuIb);
+		m_LocalMtx = DirectX::XMMatrixTranslation(0, 1, 2) * DirectX::XMMatrixRotationY(50);
 		InitVertexInformation();
 		m_Buffer = new lagConstantBuffer();
-
+		InitTexture();
 	}
 	void InitVertexInformation() {
-		lagShaderBytecode VS = lagShaderCompiler::Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\vs.hlsl", "main", "vs_5_0", D3DCOMPILE_DEBUG);
+		lagShaderBytecode VS = lagShaderCompiler::Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\vs.hlsl", SHADER_MAIN, "vs_5_0", D3DCOMPILE_DEBUG);
 		m_VertexShader = new lagVertexShader(VS);
-		lagShaderBytecode PS = lagShaderCompiler::Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\ps.hlsl", "Main", "ps_5_0", D3DCOMPILE_DEBUG);
+		lagShaderBytecode PS = lagShaderCompiler::Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\ps.hlsl", SHADER_MAIN, "ps_5_0", D3DCOMPILE_DEBUG);
 		m_FragShader = new lagFragmentShader(PS);
-		m_InputAssembler = m_Type.CreateLayout(VS); // This might be weird. 
+#if LE_DEBUG
+		std::cout << "Shaders of Types : " << ShaderType<decltype(m_VertexShader)>::DebugName << " and " << ShaderType<decltype(m_FragShader)>::DebugName << " were created. ";
+#endif
+		m_InputAssembler = Format::CreateLayout(VS); // This might be weird. 
+	}
+	void InitTexture() {
+		const char* path = "D:\\xenia_canary\\Games\\Midnight Club - Los Angeles - Complete Edition (USA, Europe)\\rockstar_logo_64x64.png";
+		CSTBIImage load = CSTBIImage(path, 4);
+		D3D11_TEXTURE2D_DESC textureDesc = {};
+		textureDesc.Width = load.GetWidth();
+		textureDesc.Height = load.GetHeight();
+		textureDesc.MipLevels = 1; // im not gonna abstract these yet.
+		textureDesc.ArraySize = 1;
+		textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		textureDesc.SampleDesc.Count = 1;
+		textureDesc.Usage = D3D11_USAGE_IMMUTABLE;
+		textureDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+		D3D11_SUBRESOURCE_DATA textureResourceData{};
+		textureResourceData.pSysMem = load.GetImage();
+		textureResourceData.SysMemPitch = load.GetWidth() * sizeof(UINT);
+		HRESULT hr = GetDevice()->CreateTexture2D(&textureDesc, &textureResourceData, &m_TextureBuffer);
+		if (hr != S_OK) {
+			std::cout  << "Failed: [CreateTexture2D] HR: " <<  GetLastError();
+			return;
+		}
+		hr = GetDevice()->CreateShaderResourceView(this->m_TextureBuffer, nullptr, &this->m_ShaderResourceView);
+		if (hr != S_OK) {
+			this->m_TextureBuffer->Release();
+			std::cout << "Failed: [CreateTexture2D] HR: " << GetLastError();
+			return;
+		}
+		D3D11_SAMPLER_DESC SampleDesc{};
+		SampleDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+		SampleDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+		SampleDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+		SampleDesc.Filter = D3D11_FILTER::D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+		SampleDesc.MipLODBias = 0.0f;
+		SampleDesc.MaxAnisotropy = 1;
+		SampleDesc.ComparisonFunc = D3D11_COMPARISON_NEVER;
+		SampleDesc.BorderColor[0] = SampleDesc.BorderColor[1] = SampleDesc.BorderColor[2] = SampleDesc.BorderColor[3] = 0;
+		SampleDesc.MinLOD = 0;
+		SampleDesc.MaxLOD = D3D11_FLOAT32_MAX;
+		hr = GetDevice()->CreateSamplerState(&SampleDesc, &this->m_SamplerState);
+		if (hr != S_OK) {
+			this->m_TextureBuffer->Release();
+			std::cout << "Failed: [CreateSamplerState] HR: " << GetLastError();
+			return;
+		}
 	}
 	DirectX::XMMATRIX& GetMtx() {
 		return m_LocalMtx;
@@ -535,20 +739,52 @@ public:
 	lagConstantBuffer* GetBuffer() {
 		return this->m_Buffer;
 	}
+private:
+	DirectX::XMFLOAT3 POSITION = {0,0,0};
+	DirectX::XMFLOAT3 ROTATION = { 0,0,0 };
+	DirectX::XMFLOAT3 SCALE = { 1,1,1 };
+	void ImGuiXmFloat(DirectX::XMFLOAT3 f) {
+		float x[3] = { f.x, f.y, f.z };
+	}
+public:
 	void Draw(ID3D11DeviceContext* pContext) {
 		const UINT stride = sizeof Vertex;
 		const UINT offset = 0;
+		ImGui::Begin("Object");
+		float pos[3] = { POSITION.x, POSITION.y, POSITION.z };
+		float rot[3] = { ROTATION.x, ROTATION.y, ROTATION.z };
+		float scale[3] = { SCALE.x, SCALE.y, SCALE.z };
+		if (ImGui::InputFloat3("Position", pos)) {
+			POSITION.x = pos[0];
+			POSITION.y = pos[1];
+			POSITION.z = pos[2];
+		}
+		if (ImGui::InputFloat3("Rotation", rot)) {
+			ROTATION.x = rot[0];
+			ROTATION.y = rot[1];
+			ROTATION.z = rot[2];
+		}
+		if (ImGui::InputFloat3("Scale", scale)) {
+			SCALE.x = scale[0];
+			SCALE.y = scale[1];
+			SCALE.z = scale[2];
+		}
+		ImGui::End();
+
+		m_LocalMtx = DirectX::XMMatrixTranslationFromVector(DirectX::XMLoadFloat3(&POSITION)) * DirectX::XMMatrixRotationRollPitchYawFromVector(DirectX::XMLoadFloat3(&ROTATION)) * DirectX::XMMatrixScalingFromVector(DirectX::XMLoadFloat3(&SCALE));
 
 		pContext->IASetInputLayout(m_InputAssembler->GetLayout());
 		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // I would assume.
+
 		pContext->PSSetShader(this->m_FragShader->GetShader(), nullptr, 0); // Signature Similar?
+		pContext->PSSetShaderResources(0, 1, &m_ShaderResourceView);
+		pContext->PSSetSamplers(0, 1, &m_SamplerState);
+
 
 		pContext->VSSetShader(this->m_VertexShader->GetShader(), nullptr, 0);
 		pContext->VSSetConstantBuffers(0, 1, m_Buffer->GetBufferPtr());
 		
-		pContext->IASetVertexBuffers(0,1,this->m_VB->GetBufferPtr(), &stride, &offset);
-		pContext->IASetIndexBuffer(this->m_IB->GetBuffer(), DXGI_FORMAT_R32_UINT, 0); // I would assume thats the type lmao.
-		pContext->DrawIndexed(m_IB->GetSize(), 0, 0); // test.
+		m_Mesh->Draw();
 	}
 	~CMyCube() {
 		delete m_VertexShader;
@@ -556,7 +792,15 @@ public:
 		delete m_InputAssembler;
 		delete m_IB;
 		delete m_VB;
+		delete m_Mesh;
 	}
+	DirectX::XMMATRIX& GetLocal() {
+		return this->m_LocalMtx;
+	}
+private: // Texture Specifications;
+	ID3D11Texture2D* m_TextureBuffer;
+	ID3D11ShaderResourceView* m_ShaderResourceView;
+	ID3D11SamplerState* m_SamplerState;
 private:
 	DirectX::XMMATRIX m_LocalMtx = DirectX::XMMatrixIdentity();
 	std::vector<Vertex> MakeModel(const aiScene* scene) {
@@ -567,7 +811,7 @@ private:
 				aiVector3D v3D = mesh->mVertices[i];
 				Vertex v{};
 				v.m_Positions = { v3D.x, v3D.y, v3D.z };
-				v.m_Color = { 1.0,1.0,1.0,1.0 };
+				v.m_Color = { mesh->mTextureCoords[0][i].x, mesh->mTextureCoords[0][i].y };
 				Mesh.push_back(v);
 			}
 			return Mesh;
@@ -584,7 +828,7 @@ private:
 					aiFace& Face = mesh->mFaces[i];
 					Mesh.push_back(Face.mIndices[0]);
 					Mesh.push_back(Face.mIndices[1]);
-					Mesh.push_back(Face.mIndices[2]);
+					Mesh.push_back(Face.mIndices[2]); 
 				}
 			}
 			return Mesh;
@@ -592,17 +836,21 @@ private:
 		std::cout << "Scene does not have a mesh!\n\0";
 		return { };
 	}
-
+	// This can be per-object? 
 	lagVertexShader* m_VertexShader = nullptr;
 	lagFragmentShader* m_FragShader = nullptr;
-	VertexFormat<
-		VertexDeclaration<eVertexNames::POSITION, eVertexType::VECTOR3, 0>,
-		VertexDeclaration<eVertexNames::COLOR, eVertexType::VECTOR4, 0>
-	> m_Type;
-	lagConstantBuffer* m_Buffer = nullptr;
+	//Mesh
+	using Format = lagStaticVertexFormat<
+		lagStaticVertexDeclaration<eStaticVertexNames::POSITION, eVertexType::VECTOR3, 0>,
+		lagStaticVertexDeclaration<eStaticVertexNames::UVCOORD, eVertexType::VECTOR2, 0>
+	>;
+	CMesh* m_Mesh;
 	lagInputAssembler* m_InputAssembler = nullptr;
 	lagVertexBuffer* m_VB = nullptr;
 	lagIndexBuffer* m_IB = nullptr;
+
+	// This is a constant buffer which either is specified by the object or its specified by the shader. The Shader USES the buffer but it doesn't know what it actually would be. 
+	lagConstantBuffer* m_Buffer = nullptr;
 };
 
 class camCamera{
@@ -626,7 +874,7 @@ public:
 	float m_fFOV = 60.0; // 60 is a good default Although should just make it project spec :/
 	float m_fNearZ = 0.00001f;
 	float m_fFarZ = 100.f;
-	DirectX::XMFLOAT3 m_Position = {0,0,-10}; // Target and Position can never meet. 
+	DirectX::XMFLOAT3 m_Position = {2,2,10}; // Target and Position can never meet. 
 	DirectX::XMFLOAT3 m_Target = { 0,0,0 };
 	DirectX::XMFLOAT3 m_Up = { 0,1,0 }; // Although we should change this to not be this. As up might be a global?
 };
@@ -665,7 +913,6 @@ public:
 		//}
 	}
 	void UpdateCameraPosition() { // Probably add an ImGui module to this or just make it dependent on the KB but because you don't have that abstraction yet, I recommend the ImGui route. . 
-		
 	}
 	void Init(const CWindow* wind) {
 		auto devs = sOutDevice::Init(wind->GetWindowHandle());
@@ -675,8 +922,6 @@ public:
 		delete devs; // devs does not exist anymore. 
 		InitDeviceLayer();
 		m_MyCube = new CMyCube();
-
-		m_Cube2 = new CMyCube();
 
 		m_Camera = new camCamera();
 		m_Camera->m_fFarZ = 800.0f; 
@@ -754,16 +999,17 @@ public:
 	void CompileShaders() {
 
 	}
-	
-	void Update() {
-
-		UpdateCameraPosition();
+	void Clear() {
 		const float m_fClear[4] = { 0.145,0.145,0.16,1.0f };
 		m_pContext->ClearRenderTargetView(m_View, m_fClear);
 
-		//@TODO: Learn more about these!!!
 		m_pContext->ClearDepthStencilView(DepthView, D3D11_CLEAR_DEPTH, 1.0, 0);
-		m_pContext->OMSetDepthStencilState(DepthStencilState, 0); 
+		m_pContext->OMSetDepthStencilState(DepthStencilState, 0);
+	}
+	void Update() {
+
+		UpdateCameraPosition();
+
 		
 		
 		Constant* pConst = m_MyCube->GetBuffer()->Map();
@@ -785,26 +1031,8 @@ public:
 
 		m_MyCube->Draw(m_pContext);
 
-
-		pConst = m_Cube2->GetBuffer()->Map();
-
-		constant = {};
-		m_Cube2->GetMtx() = DirectX::XMMatrixTranslation(0, 2, -1);
-
-		constant.m_Model = m_Cube2->GetMtx(); // This is based on the Object.
-		constant.m_View = m_Camera->WhatWeLookingAt(); // This is based on the Camera
-		
-		fAspect = viewport.Width / viewport.Height;
-		constant.m_Projection = m_Camera->GetPerspectiveMtx(fAspect); // This is based on the Camera && Display.
-		constant.m_Model = XMMatrixTranspose(constant.m_Model);
-		constant.m_View = XMMatrixTranspose(constant.m_View);
-		constant.m_Projection = XMMatrixTranspose(constant.m_Projection);
-
-		memcpy(pConst, &constant, sizeof(Constant));
-
-		m_Cube2->GetBuffer()->Unmap();
-		m_Cube2->Draw(m_pContext);
-
+	}
+	void Present() {
 		m_pSwapChain->Present(1, 0);
 	}
 	void Shutdown() {
@@ -842,6 +1070,7 @@ public:
 		CWindowEvents::InitClass(); // Has to happen before the Window class Inits. 
 		m_Window = new CMainWindow(m_Arguments);
 		CRenderer::Get().Init(m_Window->GetRawWindow());
+		m_Debug = new CDebug();
 #else
 		printf("[Error]: Unknown/Unanticipated Platform. We are unable to support your operating system or platform.");
 		this->m_bStopRunning = true;
@@ -849,9 +1078,15 @@ public:
 		return;
 	}
 	void Update() {
+		CRenderer::Get().Clear();
+		m_Debug->BeginFrame();
+
 		this->m_bStopRunning = m_Window->g_Close;
 		m_Window->Poll();
+
 		CRenderer::Get().Update();
+		m_Debug->EndFrame();
+		CRenderer::Get().Present();
 	}
 	void Run() {
 		Init();
@@ -862,11 +1097,13 @@ public:
 	}
 	void Shutdown() {
 		CRenderer::Get().Shutdown();
+		delete m_Debug;
 		delete m_Window;
 		CLogger::Shutdown();
 	}
 	CMainWindow* GetWindow() { return m_Window; }
 private:
+	CDebug* m_Debug = nullptr;
 	CMainWindow* m_Window = nullptr;
 #ifdef LE_WIN32
 	CWinArgs*

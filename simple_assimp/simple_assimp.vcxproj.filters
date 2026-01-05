@@ -18,6 +18,9 @@
     <ClCompile Include="simple_assimp.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="sample_dyn_vert.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

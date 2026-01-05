@@ -3,6 +3,8 @@
 #include <assimp/material.h>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
+#include <stack>
+#ifdef TEST_ASSIMP
 template<typename T> struct Format {
     static void Output(const T&) {
         return;
@@ -90,37 +92,49 @@ static void Process(aiNode* Node) {
     std::cout << Node->mName.C_Str() << "\n\t";
     std::cout << Node->mNumMeshes << "\n\t";
     for (int i = 0; i < Node->mNumMeshes; i++) {
-        std::cout << Node->mMeshes[i] << "\n\t"; // in our example there is only one node(cube) 
+        std::cout << Node->mMeshes[i] << ", "; // in our example there is only one node(cube) 
     }
     std::cout << "\n";
 }
 static void Traver(aiNode* Node) { // Interesting. Trees. Parsing them is weird, but oddly logical. 
-    Process(Node);
-    for (int i = 0; i < Node->mNumChildren; i++) {
-        Traver(Node->mChildren[i]);
+    std::stack<aiNode*> Stack;
+    
+    while (!Stack.empty()) {
+
     }
 }
 static void node(aiNode* pRoot) {
-    static int FunctionCallAmount = 0;
-    if (FunctionCallAmount > 10) {
-        std::cout << "hit the call limiter\n\0";
-        return;
+    std::stack<aiNode*> Stack;
+    Stack.push(pRoot);
+    while (!Stack.empty()) {
+        aiNode* CurrentNode = Stack.top();
+
+        Stack.pop();
+
+        Process(CurrentNode);
+
+        for (int i = 0; i < CurrentNode->mNumChildren; i++) {
+            Stack.push(CurrentNode->mChildren[i]);
+        }
     }
-    Traver(pRoot);
 }
 int main()
 {
     Assimp::Importer importer;
-    const aiScene* scene = importer.ReadFile("C:\\Users\\codyc\\OneDrive\\Docs from Gaming PC\\Documents\\TestModels\\object.obj", aiPostProcessSteps::aiProcess_Triangulate);
+    const aiScene* scene = importer.ReadFile("C:\\Users\\codyc\\OneDrive\\Docs from Gaming PC\\Documents\\TestModels\\object2.obj", aiPostProcessSteps::aiProcess_Triangulate);
     if (!scene) {
         std::cout << "Could not read file.\n\0";
         return 0;
     }
+    std::cout << "- ***Mesh Parse*** -";
     std::cout << "Mesh Count: " << scene->mNumMeshes << "\n\0";
     for (int i = 0; i < scene->mNumMeshes; i++) {
         auto* mesh = scene->mMeshes[i];
         ::mesh(mesh);
-        aiNode* RootTraversal = scene->mRootNode;
-        ::node(RootTraversal);
     }
+    std::cout << "- ***Node Parse*** -\n";
+    aiNode* RootTraversal = scene->mRootNode;
+    ::node(RootTraversal);
 }
+
+#endif

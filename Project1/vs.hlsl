@@ -1,7 +1,7 @@
 struct VSIn
 {
     float3 vPosition : POSITION0;
-    float4 vColor : COLOR0;
+    float2 vColor : UVCOORD0;
 };
 
 cbuffer Transform : register(b0) // BUFFER 0 
@@ -14,10 +14,10 @@ cbuffer Transform : register(b0) // BUFFER 0
 struct VertexOut
 {
     float4 Pos : SV_Position;
-    float4 Col : COLOR0;
+    float2 Col : UVCOORD0;
 };
 
-VertexOut main(VSIn IO) 
+VertexOut LAG(VSIn IO) 
 {
     VertexOut output;
 
@@ -29,6 +29,5 @@ VertexOut main(VSIn IO)
 
     output.Pos = projPos;
     output.Col = IO.vColor;
-
     return output;
 }

@@ -105,7 +105,7 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\;E:\A_Development\Legit Engine\Main\Main\thirdparty\imgui-dock;E:\A_Development\Legit Engine\Main\Main\thirdparty\imgui-dock\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -131,6 +131,13 @@
     <ClCompile Include="Application.cpp" />
     <ClCompile Include="Logger\GameLogger.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="thirdparty\imgui-dock\backends\imgui_impl_dx11.cpp" />
+    <ClCompile Include="thirdparty\imgui-dock\backends\imgui_impl_win32.cpp" />
+    <ClCompile Include="thirdparty\imgui-dock\imgui.cpp" />
+    <ClCompile Include="thirdparty\imgui-dock\imgui_demo.cpp" />
+    <ClCompile Include="thirdparty\imgui-dock\imgui_draw.cpp" />
+    <ClCompile Include="thirdparty\imgui-dock\imgui_tables.cpp" />
+    <ClCompile Include="thirdparty\imgui-dock\imgui_widgets.cpp" />
     <ClCompile Include="WindowHandling\CWindow.cpp" />
     <ClCompile Include="WindowHandling\WindowsCmdArgs.cpp" />
   </ItemGroup>
@@ -147,6 +154,15 @@
     <ClInclude Include="Exception\exception.h" />
     <ClInclude Include="LIT_Start\ScopedPtr.h" />
     <ClInclude Include="Logger\GameLogger.h" />
+    <ClInclude Include="stb_image.h" />
+    <ClInclude Include="thirdparty\imgui-dock\backends\imgui_impl_dx11.h" />
+    <ClInclude Include="thirdparty\imgui-dock\backends\imgui_impl_win32.h" />
+    <ClInclude Include="thirdparty\imgui-dock\imconfig.h" />
+    <ClInclude Include="thirdparty\imgui-dock\imgui.h" />
+    <ClInclude Include="thirdparty\imgui-dock\imgui_internal.h" />
+    <ClInclude Include="thirdparty\imgui-dock\imstb_rectpack.h" />
+    <ClInclude Include="thirdparty\imgui-dock\imstb_textedit.h" />
+    <ClInclude Include="thirdparty\imgui-dock\imstb_truetype.h" />
     <ClInclude Include="WindowHandling\CWindow.h" />
     <ClInclude Include="WindowHandling\WindowsCmdArgs.h" />
   </ItemGroup>
