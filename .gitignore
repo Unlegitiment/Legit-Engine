@@ -361,3 +361,7 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/Main/thirdparty/imgui-dock/.github
+/Main/thirdparty/imgui-dock/docs
+/Main/thirdparty/imgui-dock/examples
+/Main/thirdparty/imgui-dock/misc
