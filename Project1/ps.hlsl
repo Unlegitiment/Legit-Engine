@@ -9,6 +9,11 @@ struct PSOut
 {
 	float4 color : SV_Target; // Is this for RenderTarget specifications?
 };
+cbuffer MyBuffer : register(b0)
+{
+    float fOpacity;
+    float3 padding;
+}
 
 PSOut LAG(PSInput input)
 {
@@ -16,6 +21,7 @@ PSOut LAG(PSInput input)
     float2 uv = input.Col;
 
     float4 c = m_Texture.Sample(MeshTextureSampler, uv);
+    c.a *= fOpacity;
     output.color = c;
 	return output;
 }

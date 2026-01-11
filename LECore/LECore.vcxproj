@@ -26,7 +26,7 @@
     <ClInclude Include="headers\platform_specs.h" />
     <ClInclude Include="Logger\Logger.h" />
     <ClInclude Include="maths\vec2.h" />
-    <ClInclude Include="types.h" />
+    <ClInclude Include="le_types.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>18.0</VCProjectVersion>

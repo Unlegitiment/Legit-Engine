@@ -4,7 +4,7 @@
 #include "WindowHandling/CWindow.h"
 #include <iostream>
 #include <LECore/maths/vec2.h>
-#include <LECore/types.h>
+#include <LECore/le_types.h>
 #include <unordered_map>
 #include <array>
 #include "Logger/GameLogger.h"
@@ -186,8 +186,6 @@ public:
 	ID3D11DeviceContext* m_pContext = nullptr;
 };
 class CApplication;
-
-
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
@@ -427,15 +425,6 @@ template<typename... V> struct lagStaticVertexFormat {
 		return m_InputLayout;
 	}
 };
-template<eVertexType... Types> struct lagVertex {
-public:
-	template<eVertexType... Types>
-	lagVertex() {
-		auto size = (VertexEvaluater<Types>::Type)...
-	}
-private:
-	void* m_Buffer;
-};
 /*
 	VertexFormat<{"POSITION", eVertexType::VECTOR3}, {"COLOR", eVertexType::VECTOR4}> m_VertexFormat;
 */
@@ -551,6 +540,7 @@ public:
 private:
 
 };
+
 class CMesh {
 public:
 	CMesh(std::vector<Vertex> Vertices, std::vector<unsigned int> Indices) : m_Vertices(Vertices), m_Indices(Indices.data(), Indices.size()){
@@ -569,12 +559,6 @@ public:
 private:
 	vertBuffer<Vertex> m_Vertices;
 	lagIndexBuffer m_Indices;
-};
-class CModel{
-public:
-
-private:
-	std::vector<CMesh> m_Meshes;
 };
 #include "stb_image.h"
 class CSTBIImage {
@@ -665,7 +649,10 @@ public:
 private:
 
 };
-
+struct fragBuffer {
+	float fOpacity;
+	float padding[3];
+};
 class CMyCube {
 public:
 	CMyCube() {
@@ -678,6 +665,7 @@ public:
 		InitVertexInformation();
 		m_Buffer = new lagConstantBuffer();
 		InitTexture();
+		InitBufferTest();
 	}
 	void InitVertexInformation() {
 		lagShaderBytecode VS = lagShaderCompiler::Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\vs.hlsl", SHADER_MAIN, "vs_5_0", D3DCOMPILE_DEBUG);
@@ -740,6 +728,7 @@ public:
 		return this->m_Buffer;
 	}
 private:
+	fragBuffer fragBuff;
 	DirectX::XMFLOAT3 POSITION = {0,0,0};
 	DirectX::XMFLOAT3 ROTATION = { 0,0,0 };
 	DirectX::XMFLOAT3 SCALE = { 1,1,1 };
@@ -747,6 +736,21 @@ private:
 		float x[3] = { f.x, f.y, f.z };
 	}
 public:
+	ID3D11Buffer* TestBufferFrag;
+	void InitBufferTest() {
+		D3D11_BUFFER_DESC Desc{};
+		Desc.Usage = D3D11_USAGE_DYNAMIC; // DYNAMIC BUFFER
+		
+		Desc.ByteWidth = sizeof(fragBuffer);
+		Desc.BindFlags = D3D11_BIND_FLAG::D3D11_BIND_CONSTANT_BUFFER;
+		Desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+		Desc.StructureByteStride = 0;
+		Desc.MiscFlags = 0; // We do not have misc flags. 
+		HRESULT hr = GetDevice()->CreateBuffer(&Desc, NULL, &TestBufferFrag);
+		if (FAILED(hr)) {
+			std::cout << "Failed[InitBufferTest()] " << GetLastError() << '\n\0';
+		}
+	}
 	void Draw(ID3D11DeviceContext* pContext) {
 		const UINT stride = sizeof Vertex;
 		const UINT offset = 0;
@@ -769,17 +773,27 @@ public:
 			SCALE.y = scale[1];
 			SCALE.z = scale[2];
 		}
+		float fInputOpacity = fragBuff.fOpacity;
+		if (ImGui::InputFloat("Opacity", &fInputOpacity)) {
+			fragBuff.fOpacity = fInputOpacity;
+			D3D11_MAPPED_SUBRESOURCE Res{};
+			GetContext()->Map(TestBufferFrag, 0, D3D11_MAP_WRITE_DISCARD, 0, &Res);
+			auto* p = (fragBuffer*)Res.pData;
+			memcpy(p, &fragBuff, sizeof(fragBuffer));
+			GetContext()->Unmap(TestBufferFrag, 0);
+
+		}
 		ImGui::End();
 
 		m_LocalMtx = DirectX::XMMatrixTranslationFromVector(DirectX::XMLoadFloat3(&POSITION)) * DirectX::XMMatrixRotationRollPitchYawFromVector(DirectX::XMLoadFloat3(&ROTATION)) * DirectX::XMMatrixScalingFromVector(DirectX::XMLoadFloat3(&SCALE));
-
+		
 		pContext->IASetInputLayout(m_InputAssembler->GetLayout());
 		pContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); // I would assume.
 
 		pContext->PSSetShader(this->m_FragShader->GetShader(), nullptr, 0); // Signature Similar?
+		pContext->PSSetConstantBuffers(0, 1, &TestBufferFrag);
 		pContext->PSSetShaderResources(0, 1, &m_ShaderResourceView);
 		pContext->PSSetSamplers(0, 1, &m_SamplerState);
-
 
 		pContext->VSSetShader(this->m_VertexShader->GetShader(), nullptr, 0);
 		pContext->VSSetConstantBuffers(0, 1, m_Buffer->GetBufferPtr());
@@ -958,14 +972,25 @@ public:
 		depthstencildesc.DepthEnable = TRUE;
 		depthstencildesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
 		depthstencildesc.DepthFunc = D3D11_COMPARISON_LESS;
-
-
 		m_pDevice->CreateDepthStencilState(&depthstencildesc, &DepthStencilState);
 		if (FAILED(hr)) {
 			std::cout << "[BACKBUFFER_ACCESS]: ID3D11DepthStencilView failed to Create!" << hr << "\n\0";
 			__debugbreak();
 			return;
 		}
+		D3D11_BLEND_DESC blendDesc{};
+		blendDesc.RenderTarget[0].BlendEnable = TRUE;
+		blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
+		blendDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+		blendDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+		blendDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+		blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
+		blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+		blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+
+		ID3D11BlendState* blendState;
+		m_pDevice->CreateBlendState(&blendDesc, &blendState);
+		m_pContext->OMSetBlendState(blendState, nullptr, 0xFFFFFFFF);
 		m_pContext->OMSetRenderTargets(1, &m_View, DepthView); // NO DEPTH.
 		m_Backbuffer->Release();
 		ZeroMemory(&viewport, sizeof(D3D11_VIEWPORT));

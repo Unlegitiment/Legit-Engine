@@ -2,6 +2,269 @@
 #include <iostream>
 #include <DirectXMath.h>
 #include <dxgiformat.h>
+#include <unordered_set>
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <DbgHelp.h>
+#include <varargs.h>
+
+#pragma comment(lib, "dbghelp.lib")
+#include "../LECore/le_types.h"
+#include "../LECore/headers/platform_specs.h"
+namespace legit {
+	enum class eLogLevel {
+		INFO,
+		WARNING,
+		ERRORF,
+		FATAL,
+		TRACE,
+		SIZEOF_LOG_LVL
+	};
+	template<legit::u64 Size = 1028> class lagLogger {
+	private:
+		static constexpr const char* LevelToColor[] = {
+			RNorm,
+			RYellow,
+			RHIRed,
+			RRed,
+			RHIPurple,
+		};
+		static constexpr const char* LevelToName[] = {
+			"INFO",
+			"WARN",
+			"ERROR",
+			"FATAL",
+			"TRACE",
+		};
+	public:
+		static constexpr legit::u64 SizeOfBuffer = Size;
+		char* Formatf(const char* fmt, ...) {
+			va_list list;
+			va_start(list, fmt);
+			char* buffer = new char[1028]{0};
+			vsnprintf_s(buffer, sizeof(buffer), 1028, fmt, list);
+			va_end(list);
+			return buffer;
+		}
+		using lagDebugFunctor = void(*)(eLogLevel lvl, const char* msg);
+		static void DefaultPrintFuncLag(eLogLevel lvl, const char* msg) {
+			printf("%s[%s] %s\n", LevelToColor[(legit::u8)lvl], LevelToName[(legit::u8)lvl], msg);
+		}
+		lagDebugFunctor Print = DefaultPrintFuncLag;
+
+		lagLogger(bool Sample = false) {
+			if (Sample) {
+				EnableLayer();
+				this->Println("This is a Sample");
+				this->Warnf("This is a Sample");
+				this->Errorf("This is a Sample");
+				this->Fatalf("This is a Sample");
+				DisableLayer();
+			}
+		}
+		void EnableLayer() {
+			m_bIsDbgLayerEnabled = true;
+		}
+		void DisableLayer() {
+			m_bIsDbgLayerEnabled = false;
+		}
+		void Println(const char* fmt, ...) {
+			if (!m_bIsDbgLayerEnabled) return;
+			va_list list;
+			va_start(list, fmt);
+			char buffer[Size]{0};
+			vsnprintf_s(buffer, sizeof(buffer), fmt, list);
+			va_end(list);
+			Print(eLogLevel::INFO, buffer);
+		}
+		void Warnf(const char* fmt, ...) {
+			if (!m_bIsDbgLayerEnabled) return;
+			va_list list;
+			va_start(list, fmt);
+			char buffer[Size]{0};
+			vsnprintf_s(buffer, sizeof(buffer), fmt, list);
+			va_end(list);
+			Print(eLogLevel::WARNING, buffer);
+		}
+		void Errorf(const char* fmt, ...) {
+			if (!m_bIsDbgLayerEnabled) return;
+			va_list list;
+			va_start(list, fmt);
+			char buffer[Size]{0};
+			vsnprintf_s(buffer, sizeof(buffer), fmt, list);
+			va_end(list);
+			Print(eLogLevel::ERRORF, buffer);
+		}
+		void Fatalf(const char* fmt, ...) {
+			if (!m_bIsDbgLayerEnabled) return;
+			va_list list;
+			va_start(list, fmt);
+			char buffer[Size]{0};
+			vsnprintf_s(buffer, sizeof(buffer), fmt, list);
+			va_end(list);
+			Print(eLogLevel::FATAL, buffer);
+		}
+		void Stacktrace(legit::u32 iSkipFrames) {
+#if LE_WIN
+			size_t Buf[32]{};
+			short sCaptured = CaptureStackBackTrace(iSkipFrames, 32, (void**)Buf, NULL);
+
+			HANDLE Proc = GetCurrentProcess(); // GetCurrentProcess Windows Function. 
+
+			SYMBOL_INFO* symbol = (SYMBOL_INFO*)calloc(sizeof(SYMBOL_INFO) + 256, 1);
+			symbol->MaxNameLen = 255;
+			symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+			for (int i = 0; i < sCaptured; i++) {
+				SymFromAddr(Proc, (DWORD64)(Buf[i]), 0, symbol);
+				char buffer[1028]{0};
+				sprintf_s(buffer, "%s - 0x%p", symbol->Name, symbol->Address);
+				Print(eLogLevel::TRACE, buffer);
+			}
+			free(symbol);
+#endif
+		}
+		~lagLogger() {
+
+		}
+	private:
+		bool m_bIsDbgLayerEnabled = false;
+	};
+	class lagDebugger {
+	public:
+		static void Init() {
+			lagDebugger::m_Logger = new lagLogger<>();
+			m_Logger->EnableLayer();
+			Enabled = true;
+		}
+		static lagLogger<>* GetLogger() {
+			return m_Logger;
+		}
+#define FuncDefLog(x) static void x(const char* fmt, ...) { va_list list; va_start(list,fmt); char buffer[lagLogger<>::SizeOfBuffer]{0}; vsnprintf_s(buffer,sizeof(buffer), fmt, list); va_end(list); GetLogger()->x("%s", buffer);}
+		FuncDefLog(Println);
+		FuncDefLog(Warnf);
+		FuncDefLog(Errorf);
+		static void Fatalf(const char* fmt, ...) {
+			va_list list;
+			va_start(list, fmt);
+			char buffer[lagLogger<>::SizeOfBuffer]{0};
+			vsnprintf_s(buffer, sizeof(buffer), fmt, list);
+			va_end(list);
+			GetLogger()->Fatalf("%s", buffer);
+			GetLogger()->Stacktrace(2);
+		};
+#undef FuncDefLog
+		static void Destroy() {
+			delete m_Logger;
+			Enabled = false;
+		}
+		static bool IsEnabled() {
+			return Enabled;
+		}
+		static bool IsDebugEnabled() {
+			
+		}
+	private:
+		static inline lagLogger<>* m_Logger{};
+		static inline bool Enabled = true;
+	};
+} // namespace legit;
+
+class CLogger {
+	struct Globals {
+		bool ActiveLevels[(int)legit::eLogLevel::SIZEOF_LOG_LVL];
+		bool IsDebugEnabled = _DEBUG ? 1 : 0;
+	} static inline sm;
+public:
+	static constexpr int LOG_BUFFER_SIZE = 1028u;
+	static void Init(bool DebugOverride = false) {
+		sm.ActiveLevels[0] = sm.ActiveLevels[1] = sm.ActiveLevels[2] = sm.ActiveLevels[3] = false;
+		if (DebugOverride) {
+			sm.IsDebugEnabled = true;
+		}
+		SymInitialize(GetCurrentProcess(), NULL, true);
+	}
+	static void Shutdown() {
+		SymCleanup(GetCurrentProcess());
+	}
+	static void EnableLoggingLayer(legit::eLogLevel layer) {
+		sm.ActiveLevels[(int)layer] = true;
+	}
+	static void DisableLoggingLayer(legit::eLogLevel layer) {
+		sm.ActiveLevels[(int)layer] = false;
+	}
+	static void Println(const char* fmt, ...) { // Standard input/output.
+		if (!sm.IsDebugEnabled) return;
+		va_list list{};
+		va_start(list, fmt);
+		char Buffer[1028]{};
+		vsnprintf_s(Buffer, sizeof(Buffer), fmt, list);
+		va_end(list);
+		printf("%s", Buffer);
+	}
+	static void PrintStackTrace(int frametoSkip = 1) {
+		if (!sm.IsDebugEnabled) return;
+		size_t Buf[32]{};
+		short sCaptured = CaptureStackBackTrace(frametoSkip, 32, (void**)Buf, NULL);
+
+		HANDLE Proc = GetCurrentProcess();
+
+		SYMBOL_INFO* symbol = (SYMBOL_INFO*)calloc(sizeof(SYMBOL_INFO) + 256, 1);
+		symbol->MaxNameLen = 255;
+		symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+		for (int i = 0; i < sCaptured; i++) {
+			SymFromAddr(Proc, (DWORD64)(Buf[i]), 0, symbol);
+			Println("%s - 0x%p\n", symbol->Name, symbol->Address);
+		}
+		free(symbol);
+	}
+	static void Logf(const char* fmt, ...) {
+		if (!sm.IsDebugEnabled || !sm.ActiveLevels[(int)legit::eLogLevel::INFO]) {
+			return;
+		}
+		va_list list{};
+		va_start(list, fmt);
+		char Buffer[1028]{};
+		vsnprintf_s(Buffer, sizeof(Buffer), fmt, list);
+		va_end(list);
+		printf("[INFO] %s", Buffer);
+	}
+	static void Warnf(const char* fmt, ...) {
+		if (!sm.IsDebugEnabled || !sm.ActiveLevels[(int)legit::eLogLevel::WARNING]) {
+			return;
+		}
+		va_list list{};
+		va_start(list, fmt);
+		char Buffer[1028]{};
+		vsnprintf_s(Buffer, sizeof(Buffer), fmt, list);
+		va_end(list);
+		printf("[WARNING] %s", Buffer);
+	}
+	static void Errorf(const char* fmt, ...) {
+		if (!sm.IsDebugEnabled || !sm.ActiveLevels[(int)legit::eLogLevel::ERRORF]) {
+			return;
+		}
+		va_list list{};
+		va_start(list, fmt);
+		char Buffer[1028]{};
+		vsnprintf_s(Buffer, sizeof(Buffer), fmt, list);
+		va_end(list);
+		printf("[ERROR] %s", Buffer);
+	}
+	static void Fatalf(const char* fmt, ...) {
+		if (!sm.IsDebugEnabled || !sm.ActiveLevels[(int)legit::eLogLevel::FATAL]) {
+			return;
+		}
+		va_list list{};
+		va_start(list, fmt);
+		char Buffer[1028]{};
+		vsnprintf_s(Buffer, sizeof(Buffer), fmt, list);
+		va_end(list);
+		printf("[FATAL] %s\n", Buffer);
+		PrintStackTrace(2);
+	}
+};
+#define Assertf(cond) do {if(!(cond)) { legit::lagDebugger::Fatalf("Assertion Failed! %s@@@%d", __FILE__, __LINE__); __debugbreak(); } } while(false)
 enum class eVertexType {
 	VECTOR2,
 	VECTOR3,
@@ -73,6 +336,7 @@ struct SizeOfFormat {
 		}
 	}
 };
+#undef CaseDefVertexSizeOf
 template<typename T> void printType(const T& val) {
 
 }
@@ -139,6 +403,7 @@ public:
 		return Arguments[Identifier];
 	}
 	char* GetByteFromPosition(int Slot) {
+		Assertf(Slot > sizeof...(T));
 		char* Starter = Vertex.GetBytes();
 		int AdditionSlot = GetByteOffset(Slot);
 		return Starter + AdditionSlot;
@@ -185,18 +450,28 @@ private:
 };
 using Format = lagStaticVertexFormat<
 	lagStaticVertexDeclaration<eStaticVertexNames::POSITION, eVertexType::VECTOR3, 0>,
-	lagStaticVertexDeclaration<eStaticVertexNames::UVCOORD, eVertexType::VECTOR2, 0>
+	lagStaticVertexDeclaration<eStaticVertexNames::UVCOORD, eVertexType::VECTOR3, 0>
 >;
 void VertexPrinter(Format::VertexType& type) {
 	type.PrintSet();
 }
 int main() {
+	legit::lagDebugger::Init();
+
+	CLogger::Init();
+	CLogger::EnableLoggingLayer(legit::eLogLevel::INFO);
+	CLogger::EnableLoggingLayer(legit::eLogLevel::WARNING);
+	CLogger::EnableLoggingLayer(legit::eLogLevel::ERRORF);
+	CLogger::EnableLoggingLayer(legit::eLogLevel::FATAL);
+
 	Format f;
-	f.AppendVertex({ 123, 0, 124 }, { 46,05 });
-	auto& a = f.Vector()[0].Get<DirectX::XMFLOAT3>(0);
+	f.AppendVertex({ 123, 0, 124 }, { 46,05,05 });
+	auto& a = f.Vector()[0].Get<DirectX::XMFLOAT3>(2);
 	f.ForeachVertex(VertexPrinter);
 	std::cout << "\n";
 	a.x = 40;
 	f.ForeachVertex(VertexPrinter);
+
+	legit::lagDebugger::Destroy();
 	return 0;
 }
