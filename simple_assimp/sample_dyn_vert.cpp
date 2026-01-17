@@ -14,6 +14,7 @@
 #include "../LECore/headers/platform_specs.h"
 namespace legit {
 	enum class eLogLevel {
+		NO_CLASSIFIER,
 		INFO,
 		WARNING,
 		ERRORF,
@@ -25,12 +26,14 @@ namespace legit {
 	private:
 		static constexpr const char* LevelToColor[] = {
 			RNorm,
+			RNorm,
 			RYellow,
 			RHIRed,
 			RRed,
 			RHIPurple,
 		};
 		static constexpr const char* LevelToName[] = {
+			"",
 			"INFO",
 			"WARN",
 			"ERROR",
@@ -39,17 +42,14 @@ namespace legit {
 		};
 	public:
 		static constexpr legit::u64 SizeOfBuffer = Size;
-		char* Formatf(const char* fmt, ...) {
-			va_list list;
-			va_start(list, fmt);
-			char* buffer = new char[1028]{0};
-			vsnprintf_s(buffer, sizeof(buffer), 1028, fmt, list);
-			va_end(list);
-			return buffer;
-		}
 		using lagDebugFunctor = void(*)(eLogLevel lvl, const char* msg);
 		static void DefaultPrintFuncLag(eLogLevel lvl, const char* msg) {
-			printf("%s[%s] %s\n", LevelToColor[(legit::u8)lvl], LevelToName[(legit::u8)lvl], msg);
+			if (lvl != eLogLevel::NO_CLASSIFIER) {
+				printf("%s[%s] %s\n", LevelToColor[(legit::u8)lvl], LevelToName[(legit::u8)lvl], msg);
+			}
+			else {
+				printf("%s", msg);
+			}
 		}
 		lagDebugFunctor Print = DefaultPrintFuncLag;
 
@@ -68,6 +68,15 @@ namespace legit {
 		}
 		void DisableLayer() {
 			m_bIsDbgLayerEnabled = false;
+		}
+		void NoClassificationPrintf(const char* fmt, ...) {
+			if (!m_bIsDbgLayerEnabled) return;
+			va_list list;
+			va_start(list, fmt);
+			char buffer[Size]{0};
+			vsnprintf_s(buffer, sizeof(buffer), fmt, list);
+			va_end(list);
+			Print(eLogLevel::NO_CLASSIFIER, buffer);
 		}
 		void Println(const char* fmt, ...) {
 			if (!m_bIsDbgLayerEnabled) return;
@@ -144,6 +153,7 @@ namespace legit {
 		FuncDefLog(Println);
 		FuncDefLog(Warnf);
 		FuncDefLog(Errorf);
+		FuncDefLog(NoClassificationPrintf);
 		static void Fatalf(const char* fmt, ...) {
 			va_list list;
 			va_start(list, fmt);
@@ -214,7 +224,7 @@ public:
 		symbol->SizeOfStruct = sizeof(SYMBOL_INFO);
 		for (int i = 0; i < sCaptured; i++) {
 			SymFromAddr(Proc, (DWORD64)(Buf[i]), 0, symbol);
-			Println("%s - 0x%p\n", symbol->Name, symbol->Address);
+			Println("%s - 0x%p\n" RNorm, symbol->Name, symbol->Address);
 		}
 		free(symbol);
 	}
@@ -297,12 +307,14 @@ enum class eStaticVertexNames {
 	POSITION,
 	COLOR,
 	UVCOORD,
+	NORMAL,
 	SIZE_OF
 };
 inline constexpr const char* VERTEX_NAMES[] = {
 	"POSITION",
 	"COLOR",
 	"UVCOORD",
+	"NORMAL"
 };
 static_assert((int)eStaticVertexNames::SIZE_OF == sizeof(VERTEX_NAMES) / sizeof(VERTEX_NAMES[0]) && "Not enough VERTEX_NAME formats");
 template<eStaticVertexNames PRIM> struct VrtxToStr {
@@ -318,6 +330,7 @@ struct lagStaticVertexDeclaration {
 };
 #include <vector>
 #include <array>
+#include <unordered_map>
 static void* Allocate(size_t size) {
 	printf("Alloc Call: %llu\n", size);
 	return malloc(size);
@@ -452,26 +465,454 @@ using Format = lagStaticVertexFormat<
 	lagStaticVertexDeclaration<eStaticVertexNames::POSITION, eVertexType::VECTOR3, 0>,
 	lagStaticVertexDeclaration<eStaticVertexNames::UVCOORD, eVertexType::VECTOR3, 0>
 >;
+// So how does one want to do this? Meaning what should the structure look like? 
+// So i need to effectively bind VTX addresses to a custom output. We should not be adding VertexStrides on the fly. Meaning that the stride won't change past construction.
+// I also need to take what is effectively an initializer list or more accurately a array of objects
+
+
+#define DECLARE_PRIMITIVES()\
+using u8 = unsigned char;\
+using u16 = unsigned short;\
+using u32 = unsigned long;\
+using u64 = unsigned long long;\
+using s8 = signed char;\
+using s16 = signed short;\
+using s32 = signed long;\
+using s64 = signed long long
+
+namespace lag {
+	DECLARE_PRIMITIVES();
+	using lagWideChar = wchar_t;
+	using lagByte = u8;
+	using lagSignedByte = s8;
+	template<typename T> u64 SizeOf() { return sizeof(T); }
+	template<typename... T> u64 CollectiveSizeOf() {
+		u64 Size{};
+		((Size += SizeOf<T>()), ...);
+		return Size;
+	}
+	template<typename T>
+	lagByte ToBytes(T data) {
+		return *reinterpret_cast<lagByte*>(&data);
+	}
+	template<typename T>
+	lagByte ToBytes(T* data) {
+		return *reinterpret_cast<lagByte*>(data);
+	}
+}
 void VertexPrinter(Format::VertexType& type) {
 	type.PrintSet();
 }
-int main() {
+void EnableLog() {
 	legit::lagDebugger::Init();
-
 	CLogger::Init();
 	CLogger::EnableLoggingLayer(legit::eLogLevel::INFO);
 	CLogger::EnableLoggingLayer(legit::eLogLevel::WARNING);
 	CLogger::EnableLoggingLayer(legit::eLogLevel::ERRORF);
 	CLogger::EnableLoggingLayer(legit::eLogLevel::FATAL);
-
-	Format f;
-	f.AppendVertex({ 123, 0, 124 }, { 46,05,05 });
-	auto& a = f.Vector()[0].Get<DirectX::XMFLOAT3>(2);
-	f.ForeachVertex(VertexPrinter);
-	std::cout << "\n";
-	a.x = 40;
-	f.ForeachVertex(VertexPrinter);
-
+}
+void ShutdownLog() {
+	CLogger::Shutdown();
 	legit::lagDebugger::Destroy();
+}
+template<int Size> void PrintAll(lag::lagByte(&b)[Size]) {
+	for (int i = 0; i < Size * 8; i++) {
+		char b = (b << i) & 0xff;
+		printf("%d", b);
+	}
+}
+void PrintAll(lag::lagByte* b, lag::u32 Size) {
+	for (int i = 0; i < Size; i++) {
+		lag::lagByte& c = b[i];
+		printf("0x%x ", c & 0xff);
+	}
+}
+void PrintBits(lag::lagByte* b, lag::u32 Size) {
+	for (int i = 0; i < Size; i++) {
+		lag::lagByte& c = b[i];
+		printf("0x%x ", (c) & 0xff);
+	}
+}
+template<typename T> struct AsPrintString {
+	static const char* Return() {
+		return "%s";
+	}
+};
+template<> struct AsPrintString<char> {
+	static const char* Return() {
+		return "%c";
+	}
+};
+template<> struct AsPrintString<float> {
+	static const char* Return() {
+		return "%f";
+	}
+};
+template<> struct AsPrintString<double> {
+	static const char* Return() {
+		return "%lf";
+	}
+};
+template<> struct AsPrintString<int> {
+	static const char* Return() {
+		return "%d";
+	}
+};
+template<> struct AsPrintString<unsigned long long> {
+	static const char* Return() {
+		return "%llu";
+	}
+};
+template<> struct AsPrintString<DirectX::XMFLOAT3> {
+	static const char* Return() {
+		return "%f %f %f";
+	}
+};
+/*
+	Purpose: Printing byte buffers of variable size to the console As another type via automatic conversion. 
+	Dependancies: lagDebugger, AsPrintString<T>::Return();
+	Note: This should be used with primitives or items that convert to primitives well, (types like, char, float, int etc.) 
+		If this is used with a non-primitive type it likely will not work because the bytes will be improperly converted.
+*/
+template<typename T>
+void PrintBytesAs(lag::lagByte* b, lag::u32 Size) {
+	for (int i = 0; i < Size / sizeof(T); i++) {
+		auto a = i * sizeof(T);
+		lag::lagByte* c = b + (a);
+		T f = *(T*)c;
+		legit::lagDebugger::Println(AsPrintString<T>::Return(), f);
+	}
+}
+/*
+	Purpose: Repeated version of PrintBytesAs<>(lag::lagByte*, lag::u32), allows for multiple byte interpretations debugged to the console.
+	Dependancies: lagDebugger, PrintBytesAs<T>(lag::lagByte*, lag::u32);
+*/
+template<typename... T> void PrintBytesAsTypes(lag::lagByte* b, lag::u32 Size) {
+	(
+		(
+			legit::lagDebugger::Println("Type: %s", typeid(T).name()),
+			PrintBytesAs<T>(b,Size),
+			legit::lagDebugger::NoClassificationPrintf("\n")
+			),
+		...
+	);
+	return;
+}
+
+
+namespace lit {
+	DECLARE_PRIMITIVES();
+	
+	template<bool T>
+	struct Type {
+		static constexpr bool Evaluation = T;
+	};
+	struct TrueT : public Type<true> {};
+	struct FalseT : public Type<false>{};
+
+	template<bool... T> struct IsAllTrue : public FalseT {};
+	template<> struct IsAllTrue<true> : public TrueT {};
+
+	template<typename Arg1, typename Arg2> struct IsSameT : public FalseT {};
+	template<typename Arg1> struct IsSameT<Arg1, Arg1> : public TrueT {};
+
+	template<typename Arg> struct IsRValue : public FalseT {};
+	template<typename Arg> struct IsRValue<Arg&&> : public TrueT{};
+
+
+	template<typename T, bool B> struct EnableIf : public FalseT{
+		using Type = void;
+	};
+	template<typename T> struct EnableIf<T, true> : public TrueT {
+		using Type = T;
+	};
+	template<typename T> struct RemoveReference {
+		using Type = T;
+	};
+	template<typename T> struct RemoveReference<T&> {
+		using Type = T;
+	};
+	template<typename T> struct RemoveReference<T&&> {
+		using Type = T;
+	};
+	template<typename T> struct AddRef {
+		using Type = T&;
+	};
+	template<typename T> struct AddRef<T&> {
+		using Type = T;
+	};
+	template<typename T> struct AddRef<T&&> {
+		using Type = T&;
+	};
+	template<typename T> typename AddRef<T>::Type DeclaredValue();
+	template<typename T>
+	struct IsCopyable {
+	private:
+		template<typename U, typename = decltype(U(DeclaredValue<const U&>()))> static TrueT Test(int);
+		template<typename> static FalseT Test(...);
+	public:
+		static constexpr bool Value = decltype(Test<T>(1))::Evaluation;
+	};
+
+
+
+#ifdef _MSC_VER
+	struct IsMSVCEnabled : public TrueT{
+#else 
+	struct IsMSVCEnabled : FalseT{
+#endif
+	};
+	template<typename T, typename R> T StaticCast(R&& val) {
+		return static_cast<T>(val);
+	}
+	template<typename T> typename RemoveReference<T>::Type&& Move(T&& arg) {
+		return StaticCast<typename RemoveReference<T>::Type&&>(arg);
+	}
+
+	template<typename T> T* MemoryMove(T* Destination, const T* Source, u32 Amount) {
+		Assertf(Destination);
+		Assertf(Amount > 0);
+#ifdef LIT_MMVE_CUSTOM
+		for (int i = 0; i < Amount; i++) {
+			Destination[i] = Source[i];
+		}
+		return Destination;
+#else
+		return (T*)memmove(Destination, Source, sizeof(T) * Amount);
+#endif
+	}
+	template<typename T> T* MemoryCopy(T* Destination, const T* Source, u32 Amount) noexcept {
+		Assertf(Destination);
+		Assertf(Amount > 0);
+		return (T*)memcpy(Destination, Source, sizeof(T) * Amount);
+	}
+	template<typename T> T* Copy(T* Destination, const T* Source, u32 Amount) noexcept {
+		if constexpr (IsCopyable<T>::Value) {
+			MemoryCopy(Destination, Source, Amount);
+			return Destination + Amount;
+		}
+		for (u32 i = 0; i < Amount; i++) {
+			Destination[i] = Source[i];
+		}
+		return Destination + Amount;
+	}
+	template<typename T> class DynamicArray {
+	public:
+		DynamicArray() {
+			
+		}
+		DynamicArray(DynamicArray<T>&& other) { // move
+			this->Buffer = other.Buffer;
+			this->Capacity = other.Capacity;
+			this->Size = other.Size;
+			other.Buffer = nullptr;
+			other.Capacity = 0;
+			other.Size = 0;
+		}
+		DynamicArray<T>& operator=(DynamicArray<T>&& other) {
+			this->Buffer = other.Buffer;
+			this->Capacity = other.Capacity;
+			this->Size = other.Size;
+			other.Buffer = nullptr;
+			other.Capacity = 0;
+			other.Size = 0;
+			return *this;
+		}
+		DynamicArray(const DynamicArray<T>& other) {
+			
+		}
+		~DynamicArray() {
+			delete Buffer;
+		}
+		void Allocate(u32 Size) {
+			this->Size = 0;
+			this->Capacity = Size * 2;
+			if (this->Buffer) {
+				delete Buffer;
+			}
+			Buffer = new T[Capacity];
+		}
+		T* GetData() {
+			return this->Buffer;
+		}
+		void Push(const T& value) {
+			Assertf(Size < Capacity);
+			Assertf(Buffer);
+			Buffer[Size] = value;
+			Size++;
+		}
+		void PushAndGrow(const T& value) {
+			Buffer[Size] = value;
+			Size++;
+			Grow(Size * 2); 
+		}
+		void Grow(u32 newCapacity) {
+			T* temp = new T[newCapacity];
+			memmove(temp, Buffer, Capacity);
+			delete Buffer;
+			Buffer = temp;
+			Capacity = newCapacity;
+			return;
+		}
+		void Remove(u32 Slot) {
+			Assertf(Slot < Size);
+			Assertf(Slot < -1);
+			//If its greater than the selected slot we want to move it down by one? But how?
+			for (int i = 0; i < Size; i++) {
+				if (i > Slot) {
+					// if the current iterator is greater than the slot shift down by one? 
+					MemoryMove(&Buffer[i - 1],&Buffer[i], 1);
+				}
+			}
+			Size--;
+		}
+		void Clear() {
+			delete[] Buffer;
+			Buffer = nullptr;
+			Size = 0;
+			Capacity = 0;
+		}
+		T& GetAt(u32 Index) {
+			Assertf(Index < Size);
+			Assertf(Index >= 0);
+			Assertf(this->Buffer);
+			return Buffer[Index];
+		}
+		u32 GetSize() const {
+			return this->Size;
+		}
+		u32 GetCapacity() {
+			return this->Capacity;
+		}
+	private:
+		T* Buffer = nullptr;
+		u32 Size = 0;
+		u32 Capacity = 0;
+	};
+	template<typename T> void DbgPrint(lit::DynamicArray<T>& pV) {
+		std::cout << "List Debug: \n\tSize: " << pV.GetSize() << " \n\tCapacity: " << pV.GetCapacity() << "\n";
+		for (int i = 0; i < pV.GetSize(); i++) {
+			T& a = pV.GetAt(i);
+			//std::cout << a << std::endl;
+		}
+	}
+	template<typename T, u64 _Size>
+	class StaticArray {
+	public:
+		constexpr StaticArray() = default;
+		~StaticArray() {}
+		constexpr u64 Capacity() {
+			return _Size;
+		}
+		constexpr u64 Size() {
+			return _Size;
+		}
+		constexpr void Insert(const T& data, u64 Position) {
+			Assertf(_Size > Position && "Cannot perform this.");
+			Buffer[Position] = data;
+		}
+		DynamicArray<T> ToDynamic() {
+			DynamicArray<T> Ret;
+			Ret.Allocate(_Size);
+			Copy(Ret.GetData(), Buffer, _Size);
+			return Ret;
+		}
+	private:
+		T Buffer[_Size];
+	};
+	template<typename T>
+	class ScopedPtr {
+	public:
+		ScopedPtr() = default;
+		ScopedPtr(std::decay_t<T>&& rPointer) : Pointer(new T(rPointer)) {
+
+		}
+		ScopedPtr& operator=(T*&& rPointer) {
+			this->Pointer = rPointer;
+			return *(this);
+		}
+		ScopedPtr(const ScopedPtr<T>&) = delete;
+		ScopedPtr& operator=(const ScopedPtr<T>&) = delete;
+		ScopedPtr(ScopedPtr<T>&& rhs) {
+			this->Pointer = rhs.Pointer;
+			rhs.Pointer = nullptr;
+		}
+		ScopedPtr& operator=(ScopedPtr<T>&& rhs) {
+			this->Pointer = rhs.Pointer;
+			rhs.Pointer = nullptr;
+			return (*this);
+		}
+		T& operator*() {
+			return *this->Pointer;
+		}
+		T& operator->() {
+			return *this->Pointer;
+		}
+		T* operator&() {
+			return this->Pointer;
+		}
+		ScopedPtr<T>* GetAddressOfScope() {
+			return this;
+		}
+		~ScopedPtr() {
+			delete Pointer;
+		}
+	private:
+		T* Pointer = nullptr;
+	};
+}
+class CDynamicTest {
+public:
+	static void Init() {
+		 
+		const char* BufferNames[]{
+			"POSITION",
+			"UVCOORDINATE",
+			"NORMAL"
+		};
+		const int SizeAtEach[]{
+			lag::SizeOf<DirectX::XMFLOAT3>(),
+			lag::SizeOf<DirectX::XMFLOAT2>(),
+			lag::SizeOf<DirectX::XMFLOAT3>() 
+		};
+		lag::u64 Size = lag::CollectiveSizeOf<DirectX::XMFLOAT3, DirectX::XMFLOAT2, DirectX::XMFLOAT3>();
+		lit::ScopedPtr<lag::lagByte*> Buffer{new lag::lagByte[Size]{0}};
+		lag::s32 Access = 2; // I want to access THIS item.
+
+		lag::u64 ByteOffset = 0;
+		for (int i = 0; i < Access; i++) {
+			ByteOffset += SizeAtEach[i];
+			Assertf(ByteOffset < Size);
+		}
+		
+		DirectX::XMFLOAT3* pOffset = (DirectX::XMFLOAT3*)(*Buffer + ByteOffset);
+		pOffset->x = 4;
+		pOffset->y = 4;
+		pOffset->z = 4;
+
+		PrintBytesAsTypes<float, int>(*Buffer, Size);
+		
+	}
+	static void Destroy(){
+	
+	}
+private:
+};
+int MyMain() {
+	CDynamicTest::Init();
+
+
+	CDynamicTest::Destroy();
+
+	return 0;
+}
+int main() {
+	EnableLog();
+
+
+	MyMain();
+
+
+	ShutdownLog();
 	return 0;
 }
