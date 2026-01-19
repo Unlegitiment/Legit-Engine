@@ -131,6 +131,7 @@
     <ClCompile Include="Application.cpp" />
     <ClCompile Include="Logger\GameLogger.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="stbi_import.cpp" />
     <ClCompile Include="thirdparty\imgui-dock\backends\imgui_impl_dx11.cpp" />
     <ClCompile Include="thirdparty\imgui-dock\backends\imgui_impl_win32.cpp" />
     <ClCompile Include="thirdparty\imgui-dock\imgui.cpp" />
@@ -150,10 +151,10 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Application.h" />
     <ClInclude Include="Exception\exception.h" />
     <ClInclude Include="LIT_Start\ScopedPtr.h" />
     <ClInclude Include="Logger\GameLogger.h" />
+    <ClInclude Include="stbi_import.h" />
     <ClInclude Include="stb_image.h" />
     <ClInclude Include="thirdparty\imgui-dock\backends\imgui_impl_dx11.h" />
     <ClInclude Include="thirdparty\imgui-dock\backends\imgui_impl_win32.h" />

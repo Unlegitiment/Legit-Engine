@@ -1,6 +1,7 @@
 #pragma once
 #include <LECore/core/args.h>
 #include <Windows.h>
+//might rework.
 class CWinArgs : public legit::fwCmdArgs {
 public:
 	CWinArgs(HINSTANCE hInstance, HINSTANCE hPrevInstance, wchar_t* pCmdLine, int nCmdShow);

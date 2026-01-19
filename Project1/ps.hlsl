@@ -5,8 +5,8 @@ struct PSInput
     float2 UV : UVCOORD0;
 };;
 
-//Texture2D m_Texture : register(t0); // BIND RESOURCE TO TEXTURE0
-//SamplerState MeshTextureSampler : register(s0);
+Texture2D m_Texture : register(t0); // BIND RESOURCE TO TEXTURE0
+SamplerState MeshTextureSampler : register(s0);
 
 struct PSOut
 {
@@ -17,6 +17,6 @@ PSOut main(PSInput input)
 {
 	PSOut output = (PSOut) 0;
 
-    output.color = float4(input.Col, 1.0);
+    output.color = m_Texture.Sample(MeshTextureSampler, input.UV);
 	return output;
 }

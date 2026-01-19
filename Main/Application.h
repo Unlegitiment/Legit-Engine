@@ -1,4 +1,5 @@
 #pragma once
+#ifdef USE_RENDERER
 #define NOMINMAX
 #include <LECore/core/args.h>
 #include "WindowHandling/CWindow.h"
@@ -24,123 +25,10 @@
 * I thought it was more complex but looking at Unreal and Unity it just shows me that when you make an Entity it has children. The children must exist somewhere else it wouldn't work with the Scene Graph System.
 * Very confusing but actually kinda also not confusing. probably next though will be a vehicle MAYBE! Or something that enforces multiple entities in relevence to another. (we can also see this visually in Blender!)
 */
-
-struct WindowEventParams {
-public:
-	WPARAM wParam;
-	LPARAM lParam;
-};
-class CWindowEvents {
-public:
-	using WindowsCallbackSignature = void(*)(const WindowEventParams&);
-	static void InitClass() {
-		sm_pInstance = new CWindowEvents();
-	}
-	static CWindowEvents* Get() { 
-		if (!sm_pInstance) {
-			std::cout << "[CWindowEvents] InitClass has not been called yet." << std::endl;
-			return nullptr;
-		}
-		return sm_pInstance; 
-	}
-	static void ShutdownClass() {
-		delete sm_pInstance;
-	}
-	void EventToggle(legit::u32 Msg, WPARAM wParam, LPARAM lParam) {
-		m_Params[Msg] = { wParam, lParam };
-		FireEvent(Msg);
-	}
-	void Subscribe(legit::u32 uMsg, const WindowsCallbackSignature& sig) {
-		this->MsgToCb[uMsg].push_back(sig);
-	}
-	void FireEvent(legit::u32 uMsg) {
-		if (uMsg == WM_DESTROY) {
-			PostQuitMessage(0);
-			return;
-		}
-		if (!WasEventFiredOnRecentTick(uMsg)) return;
-		auto res = GetFromEvent(uMsg);
-		if (IsNullEvent(res)) return;
-		for (auto& [evt, cbList] : this->MsgToCb) {
-			//std::cout << "[WindowEvent::Event] : evt " << evt << "[Vector] : " << cbList.size() << " Mem: {\n" ;
-			/*for (int i = 0; i < cbList.size(); i++) {
-				std::cout << cbList.data()[i] << ",\n";
-			}*/
-			//std::cout << "}\n\0";
-			if (evt == uMsg) {
-				for (auto& cb : cbList) {
-					//std::cout << "[WindowEvent::CallBackList]: " << cbList.size() << std::endl; // this is weird. When this is active it only calls it once but when it isn't it triple calls the CB?
-					cb(res);
-				}
-				if (evt == WM_DESTROY) {
-					//std::cout << "what the fuck bluddydiddy" << std::endl;
-				}
-			}
-		}
-	}
-	bool WasEventFiredOnRecentTick(legit::u32 uMsg) {
-		auto res = this->m_Params.find(uMsg);
-		if (res == m_Params.end()) return false;
-		return true;
-	}
-	const WindowEventParams& GetFromEvent(legit::u32 uMsg) {
-		if (WasEventFiredOnRecentTick(uMsg)) {
-			return m_Params[uMsg];
-		}
-		else {
-			return nullEvent;
-		}
-	}
-	bool IsNullEvent(const WindowEventParams& evtPrm) {
-		return (evtPrm.lParam == NULL && evtPrm.wParam == NULL) ? true : false;
-	}
-	void EndFrame() {
-		m_Params.clear();
-	}
-private:
-	static inline CWindowEvents* sm_pInstance = nullptr;
-	WindowEventParams nullEvent = { NULL, NULL };
-	std::unordered_map<legit::u32, std::vector<WindowsCallbackSignature>> MsgToCb;
-	std::unordered_map<legit::u32, WindowEventParams> m_Params;
-};
 #include "imgui.h"
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-class CMainWindow{
-public:
-	CMainWindow(CWinArgs* args) : m_Window(args, L"lagWindow", L"GameWin32.exe", WindowProc) {
-		m_pWindow = this;
-		ShowWindow(m_Window.GetWindowHandle(), m_Window.GetWindowArgs()->GetCmdShow());
-	}
-	bool g_Close = false;
-	static LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-		if (ImGui_ImplWin32_WndProcHandler(hwnd, uMsg, wParam, lParam)) {
-			return true;
-		}
-		HRESULT hResult{};
-		if (uMsg == WM_DESTROY) {
-			CMainWindow::Get().g_Close = true;
-		}
-		CWindowEvents::Get()->EventToggle(uMsg, wParam, lParam); // have to check this
-		return DefWindowProc(hwnd, uMsg, wParam, lParam);
-	}
-	void Poll() {
-		m_Window.Poll();
-		CWindowEvents::Get()->EndFrame();
-	}
-	~CMainWindow() {
-		CloseWindow(m_Window.GetWindowHandle());
-		CWindowEvents::ShutdownClass(); // check.
-	}
-	static CMainWindow& Get() {
-		return *m_pWindow;
-	}
-	CWindow* GetRawWindow() { return &m_Window; }
-private:
-	static inline CMainWindow* m_pWindow = nullptr;
-	CWindow m_Window;
-};
 
-
+#include <d3d9.h>
 #include <d3d11.h>
 class CApplication;
 #include <assimp/Importer.hpp>
@@ -304,7 +192,7 @@ template<eVertexType V> struct VertexBase {
 };
 template<typename T, DXGI_FORMAT F> struct VertexOfType {
 	using Type = T;
-	static constexpr int SizeOfType = sizeof (Type);
+	static constexpr size_t SizeOfType = sizeof (Type);
 	static constexpr DXGI_FORMAT m_TypeFormat = F;
 };
 template<typename T, DXGI_FORMAT FORMAT>
@@ -362,6 +250,13 @@ template<typename... V> struct lagStaticVertexFormat {
 		};
 		lagInputAssembler* m_InputLayout = new lagInputAssembler(arr.data(), arr.size(), byteCode);
 		return m_InputLayout;
+	}
+	static constexpr const size_t Size() {
+		size_t s{0};
+		s += ((sizeof(VertexEvaluater<V::Type>::Type)), ...);
+		// HACK! Vertices that don't comply are multiplied by the amount in order to meet the threshold for the assert. 12 * 4 = 48, assert pass. 
+		s *= sizeof...(V);
+		return s;
 	}
 };
 /*
@@ -578,6 +473,25 @@ public:
 	static void SetViewports(const std::vector<D3D11_VIEWPORT>& Viewports) {
 		m_pContext->RSSetViewports(Viewports.size(), Viewports.data());
 	}
+	static ID3D11SamplerState* CreateSamplerState(const D3D11_SAMPLER_DESC* pDesc) {
+		ID3D11SamplerState* pState{nullptr};
+		HRESULT hr = m_pDevice->CreateSamplerState(pDesc, &pState);
+		NotifyIfFailed(hr, nullptr);
+		return pState;
+	}
+	static void SetFragmentShaderResources(UINT StartSlot, const std::vector<ID3D11ShaderResourceView*>& Resources) {
+		m_pContext->PSSetShaderResources(StartSlot, Resources.size(), Resources.data());
+	}
+	static void SetFragmentSamplers(UINT StartSlot, const std::vector<ID3D11SamplerState*> States) {
+		m_pContext->PSSetSamplers(StartSlot, States.size(), States.data());
+	}
+	static ID3D11ShaderResourceView* CreateShaderResourceView(ID3D11Resource* pResource, D3D11_SHADER_RESOURCE_VIEW_DESC* pDesc = nullptr) {
+		HRESULT hr{S_OK};
+		ID3D11ShaderResourceView* pView{};
+		hr = m_pDevice->CreateShaderResourceView(pResource, pDesc, &pView);
+		NotifyIfFailed(hr, nullptr);
+		return pView;
+	}
 	static ID3D11DepthStencilState* CreateDepthStencilState(const D3D11_DEPTH_STENCIL_DESC* pDesc) {
 		ID3D11DepthStencilState* pState{nullptr};
 		HRESULT hr = m_pDevice->CreateDepthStencilState(pDesc, &pState);
@@ -679,7 +593,6 @@ public:
 		ImGui_ImplDX11_NewFrame();
 		ImGui_ImplWin32_NewFrame();
 		ImGui::NewFrame();
-
 	}
 	void EndFrame() {
 		ImGui::Render();
@@ -727,10 +640,10 @@ public:
 };
 class CBackBuffer {
 public:
-	CBackBuffer() {
+	CBackBuffer(ID3D11Texture2D* RenderTexture = lagDevice::GetBackBuffer()) {
 		HRESULT hr{S_OK};
-		this->m_Backbuffer = lagDevice::GetBackBuffer();
 
+		this->m_Backbuffer = RenderTexture;
 		this->m_View = lagDevice::CreateRenderTarget(m_Backbuffer, nullptr);
 		if (FAILED(hr)) {
 			std::cout << "[CBackBuffer::ctor] RenderTargetView could not be created? **Check m_BackBuffer != nullptr**" << hr;
@@ -746,8 +659,8 @@ public:
 		depthBufferDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
 		depthBufferDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
 
-		ID3D11Texture2D* depthBuffer = lagDevice::CreateTexture2D(&depthBufferDesc, nullptr);
-		m_DepthStencilView = lagDevice::CreateDepthStencilView(depthBuffer, nullptr);
+		m_DepthBuffer = lagDevice::CreateTexture2D(&depthBufferDesc, nullptr);
+		m_DepthStencilView = lagDevice::CreateDepthStencilView(m_DepthBuffer, nullptr);
 
 		D3D11_DEPTH_STENCIL_DESC depthstencildesc = {};
 		depthstencildesc.DepthEnable = TRUE;
@@ -755,15 +668,23 @@ public:
 		depthstencildesc.DepthFunc = D3D11_COMPARISON_LESS;
 		m_DepthState = lagDevice::CreateDepthStencilState(&depthstencildesc);
 	}
+	void SetTarget(ID3D11Texture2D* pTexture) {
+		this->m_Backbuffer->Release();
+		this->m_Backbuffer = pTexture;
+	}
 	void ClearViews() {
 		lagDevice::ClearRenderTarget(this->m_View, fValues[0], fValues[1], fValues[2], fValues[3]);
 		lagDevice::ClearDepthStencilView(this->m_DepthStencilView);
 	}
 	void Bind() {
-		lagDevice::SetRenderTargets({m_View}, nullptr);
+		lagDevice::GetContext()->OMSetDepthStencilState(this->m_DepthState, 0);
+		lagDevice::SetRenderTargets({m_View}, this->m_DepthStencilView);
 	}
 	ID3D11Texture2D* GetBackBuffer() {
 		return this->m_Backbuffer;
+	}
+	ID3D11Texture2D* GetDepthBuffer() {
+		return this->m_DepthBuffer;
 	}
 	ID3D11RenderTargetView* GetView() {
 		return this->m_View;
@@ -778,8 +699,9 @@ public:
 		return fValues;
 	}
 private:
-	float fValues[4]{0};
+	float fValues[4]{0.40392,0.360784,0.776470,1};
 	ID3D11Texture2D* m_Backbuffer = nullptr;
+	ID3D11Texture2D* m_DepthBuffer;
 	ID3D11RenderTargetView* m_View = nullptr;
 	ID3D11DepthStencilState* m_DepthState = nullptr;
 	ID3D11DepthStencilView* m_DepthStencilView = nullptr;
@@ -804,51 +726,146 @@ public:
 private:
 	static inline camCamera* m_Camera = nullptr;
 };
+class lagTexture2D {
+public:
+	lagTexture2D(CSTBIImage* pImage) {
+		D3D11_TEXTURE2D_DESC textureDesc = {};
+		textureDesc.Width = pImage->GetWidth();
+		textureDesc.Height = pImage->GetHeight();
+		textureDesc.MipLevels = 1; // im not gonna abstract these yet.
+		textureDesc.ArraySize = 1;
+		textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		textureDesc.SampleDesc.Count = 1;
+		textureDesc.Usage = D3D11_USAGE_IMMUTABLE;
+		textureDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+		D3D11_SUBRESOURCE_DATA textureResourceData{};
+		textureResourceData.pSysMem = pImage->GetImage();
+		textureResourceData.SysMemPitch = pImage->GetWidth() * sizeof(UINT);
+		HRESULT hr{S_OK};
+		this->pTexture = lagDevice::CreateTexture2D(&textureDesc, &textureResourceData);
+		this->pTextureView = lagDevice::CreateShaderResourceView(this->pTexture);
+	}
+	ID3D11Texture2D* GetTexture() {
+		return this->pTexture;
+	}
+	ID3D11ShaderResourceView* GetResource() {
+		return this->pTextureView;
+	}
+	~lagTexture2D() {
+		pTextureView->Release();
+		pTexture->Release();
+	}
+private:
+	ID3D11Texture2D* pTexture;
+	ID3D11ShaderResourceView* pTextureView;
+};
+class CMesh {
+public:
+	CMesh(aiMesh* pMesh) {
+		assert(sizeof(Vertex) == VtxFormat::Size() && "Size Format is incompatible. The Format and the Vertex Type must have the SAME size");
+		std::vector<Vertex> Vertices;
+		Vertices.reserve(pMesh->mNumVertices);
+		for (int i = 0; i < pMesh->mNumVertices; i++) {
+			Vertex v{};
+			v.POSITION = pMesh->mVertices[i];
+			v.NORMALS = pMesh->mNormals[i];
+			v.UVCOORD = pMesh->mTextureCoords[0][i]; // im gonna just assume it ;/ its shitty but yk whatever. 
+			printf("Cube: {%f %f %f} {%f %f %f} {%f %f %f} {%f %f %f}\n", v.POSITION.x, v.POSITION.y, v.POSITION.z, v.COLOR.x, v.COLOR.y, v.COLOR.z, v.UVCOORD.x, v.UVCOORD.y, v.UVCOORD.z, v.NORMALS.x, v.NORMALS.y, v.NORMALS.z);
+			Vertices.push_back(v);
+		}
+		std::vector<unsigned int> mIndices{};
+		mIndices.reserve(pMesh->mNumFaces * 3); // 3 per face. we just don't know yet because TRIANGULATE enforces 3 per face rule!
+		for (int i = 0; i < pMesh->mNumFaces; i++) {
+			auto& face = pMesh->mFaces[i];
+			for (int j = 0; j < face.mNumIndices; j++) {
+				mIndices.push_back(face.mIndices[j]);
+			}
+		}
+		this->m_Buffer = new lagVertexBuffer(Vertices.data(), Vertices.size(), sizeof(Vertex));
+		this->m_IdBuffer = new lagIndexBuffer(mIndices.data(), mIndices.size());
+	}
+	//void AppendTexture(CSTBIImage* pImage) {
+	//	this->m_Textures.emplace_back(pImage);
+	//}
+	void Draw() {
+
+		UINT stride = sizeof(Vertex);
+		UINT offset = 0;
+
+		lagDevice::GetContext()->IASetVertexBuffers(0, 1, this->m_Buffer->GetBufferPtr(), &stride, &offset);
+		lagDevice::GetContext()->IASetIndexBuffer(this->m_IdBuffer->GetBuffer(), DXGI_FORMAT_R32_UINT, 0);
+		lagDevice::DrawIndexed(m_IdBuffer->GetSize());
+	}
+	using VtxFormat = lagStaticVertexFormat<
+		lagStaticVertexDeclaration<eStaticVertexNames::POSITION, eVertexType::VECTOR3, 0>, // POS0
+		lagStaticVertexDeclaration<eStaticVertexNames::COLOR, eVertexType::VECTOR3, 0>, // COLOR0
+		lagStaticVertexDeclaration<eStaticVertexNames::UVCOORD, eVertexType::VECTOR3, 0>, // UVCOORD0
+		lagStaticVertexDeclaration<eStaticVertexNames::NORMALS, eVertexType::VECTOR3, 0> // NORMALS0
+	>;
+	lagVertexBuffer* GetVertBuffer() {
+		return this->m_Buffer;
+	}
+	lagIndexBuffer* GetIndexBuffer() {
+		return this->m_IdBuffer;
+	}
+	// This is much more of a type, but still it is an object :]
+	VtxFormat& GetVertInfo() {
+		return this->VertexInformation;
+	}
+	
+private:
+	//std::vector<lagTexture2D> m_Textures;
+	VtxFormat VertexInformation;
+	lagVertexBuffer* m_Buffer{nullptr};
+	lagIndexBuffer* m_IdBuffer{nullptr};
+};
+
 class CTestCube {
 public:
 	CTestCube() {
 		// --- DRAWABLE SETUP --- 
 		Assimp::Importer m_Importer{};
-		const aiScene* pScene = m_Importer.ReadFile("C:\\Users\\codyc\\OneDrive\\Docs from Gaming PC\\Documents\\TestModels\\object.obj", aiPostProcessSteps::aiProcess_Triangulate | aiPostProcessSteps::aiProcess_GenNormals | aiPostProcessSteps::aiProcess_GenUVCoords);
+		const aiScene* pScene = m_Importer.ReadFile("C:\\Users\\codyc\\OneDrive\\Docs from Gaming PC\\Documents\\TestModels\\cube.obj", aiPostProcessSteps::aiProcess_Triangulate | aiPostProcessSteps::aiProcess_GenNormals | aiPostProcessSteps::aiProcess_GenUVCoords | aiPostProcessSteps::aiProcess_FlipUVs);
 		if (pScene->HasMeshes() && pScene->mNumMeshes == 1) {
-			aiMesh* mesh = pScene->mMeshes[0];
-			std::vector<Vertex> Vertices;
-			Vertices.reserve(mesh->mNumVertices);
-			for (int i = 0; i < mesh->mNumVertices; i++) {
-				Vertex v{};
-				v.POSITION = mesh->mVertices[i];
-				v.NORMALS = mesh->mNormals[i];
-				v.UVCOORD = mesh->mTextureCoords[0][i]; // im gonna just assume it ;/ its shitty but yk whatever. 
-				Vertices.push_back(v);
-			}
-			std::vector<unsigned int> mIndices{};
-			mIndices.reserve(mesh->mNumFaces * 3); // 3 per face. we just don't know yet because TRIANGULATE enforces 3 per face rule!
-			for (int i = 0; i < mesh->mNumFaces; i++) {
-				auto& face = mesh->mFaces[i];
-				for (int j = 0; j < face.mNumIndices; j++) {
-					mIndices.push_back(face.mIndices[j]);
-				}
-			}
-			this->m_Buffer = new lagVertexBuffer(Vertices.data(), Vertices.size(), sizeof(Vertex));
-			this->m_IdBuffer = new lagIndexBuffer(mIndices.data(), mIndices.size()); 
+			pMesh = new CMesh(pScene->mMeshes[0]);
 		}
 		m_Importer.FreeScene();
 		// --- SHADER SETUP --- 
 		auto vs = lagShaderCompiler::Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\vs.hlsl", "main", "vs_5_0", 0);
 		auto ps = lagShaderCompiler::Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\ps.hlsl", "main", "ps_5_0", 0);
 		this->m_vShader = new lagVertexShader(vs);
-		this->m_Input = VertexInformation.CreateLayout(vs);
+		this->m_Input = pMesh->GetVertInfo().CreateLayout(vs);
 		this->m_fragShader = new lagFragmentShader(ps);
 		// --- MISC SETUP ---
 		this->m_Cbuffer = new lagConstantBuffer(); 
 
+		CSTBIImage load{"E:\\A_Development\\Legit Engine\\Main\\Main\\rockstar_logo_64x64.png", 4};
+		this->pTextures.emplace_back(&load);
+
+		D3D11_SAMPLER_DESC SampleDesc{};
+		SampleDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+		SampleDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+		SampleDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+		SampleDesc.ComparisonFunc = D3D11_COMPARISON_ALWAYS;
+		SampleDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+		SampleDesc.MipLODBias = 0.0f;
+		SampleDesc.MaxAnisotropy = 1;
+		SampleDesc.BorderColor[0] = SampleDesc.BorderColor[1] = SampleDesc.BorderColor[2] = SampleDesc.BorderColor[3] = 0;
+		SampleDesc.MinLOD = 0;
+		SampleDesc.MaxAnisotropy = D3D11_FLOAT32_MAX;
+		lagDevice::GetDevice()->CreateSamplerState(&SampleDesc, &this->pSamplerState);
 		lagDevice::GetContext()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST); //basic typical stuff.
-		lagDevice::GetContext()->IASetInputLayout(m_Input->GetLayout());
 	}
+	DirectX::XMFLOAT3 POSITION{0,0,0}, ROTATION{0,2.5,0}, SCALE{1,1,1};
 	void Draw() {
 		Constant* Buffer = m_Cbuffer->Map();
 		Constant Temp{};
-		DirectX::XMFLOAT3 POSITION{0,0,0}, ROTATION{0,0,0}, SCALE{1,1,1};
+		ImGui::Begin("Object");
+		ImGui::InputFloat3("Position", reinterpret_cast<float*>(&POSITION));
+		ImGui::InputFloat3("Rotation", reinterpret_cast<float*>(&ROTATION));
+		ImGui::InputFloat3("Scale", reinterpret_cast<float*>(&SCALE));
+		ImGui::End();
+
 		DirectX::XMMATRIX mat = DirectX::XMMatrixTranslationFromVector(DirectX::XMLoadFloat3(&POSITION)) * DirectX::XMMatrixRotationRollPitchYawFromVector(DirectX::XMLoadFloat3(&ROTATION)) * DirectX::XMMatrixScalingFromVector(DirectX::XMLoadFloat3(&SCALE));
 		Temp.m_Model = mat;
 		Temp.m_View = GameCamera::GetRawCamera()->WhatWeLookingAt();
@@ -860,35 +877,35 @@ public:
 		Temp.m_Projection = DirectX::XMMatrixTranspose(Temp.m_Projection);
 		memcpy(Buffer, &Temp, sizeof(Constant));	
 		m_Cbuffer->Unmap();
+		std::vector<ID3D11ShaderResourceView*> Resources{this->pTextures.size()};
+		for (int i = 0; i < pTextures.size(); i++) {
+			Resources[i] = pTextures[i].GetResource();
+		}
 
-		UINT stride = sizeof(Vertex);
-		UINT offset = 0;
-
-
-		lagDevice::GetContext()->IASetVertexBuffers(0, 1, this->m_Buffer->GetBufferPtr(), &stride, &offset);
-		lagDevice::GetContext()->IASetIndexBuffer(this->m_IdBuffer->GetBuffer(), DXGI_FORMAT_R32_UINT, 0);
-
+		lagDevice::GetContext()->IASetInputLayout(m_Input->GetLayout());
+		lagDevice::SetFragmentShaderResources(0, Resources);
+		lagDevice::SetFragmentSamplers(0, {this->pSamplerState});
 		lagDevice::SetVertexConstantBuffers(0, {m_Cbuffer->GetBuffer()});
+		// --- Shader Binding ---
 		lagDevice::SetFragmentShader(this->m_fragShader->GetShader());
 		lagDevice::SetVertexShader(this->m_vShader->GetShader());
 		
-		
-		lagDevice::DrawIndexed(this->m_IdBuffer->GetSize());
+		pMesh->Draw();
 	}
 	~CTestCube() {
-		delete m_Buffer;
-		delete m_IdBuffer;
+		delete pMesh;
+		delete m_vShader;
+		delete m_fragShader;
+		delete m_Cbuffer;
+		delete m_Input;
 	}
 private:
 	//Cannot exist without a mesh. 
-	lagStaticVertexFormat<
-		lagStaticVertexDeclaration<eStaticVertexNames::POSITION, eVertexType::VECTOR3, 0>, // POS0
-		lagStaticVertexDeclaration<eStaticVertexNames::COLOR, eVertexType::VECTOR3, 0>, // COLOR0
-		lagStaticVertexDeclaration<eStaticVertexNames::UVCOORD, eVertexType::VECTOR3, 0>, // UVCOORD0
-		lagStaticVertexDeclaration<eStaticVertexNames::NORMALS, eVertexType::VECTOR3, 0> // NORMALS0
-	> VertexInformation;
-	lagVertexBuffer* m_Buffer{nullptr};
-	lagIndexBuffer* m_IdBuffer{nullptr};
+	CMesh* pMesh{};
+	lagTexture2D* pTexture;
+	ID3D11SamplerState* pSamplerState;
+	std::vector<lagTexture2D> pTextures;
+
 	//runtime stuff for meshes. (also partially dependant on meshes but not entirely. For example the lagConstantBuffer is much more for "global" engine buffers same with input assembler, its dependant on shaders AND meshes, since it maps the mesh format to a readable fmt.
 	lagConstantBuffer* m_Cbuffer{nullptr}; // This is pass dependant. This can tell our shaders WHERE we are rendering from more primarily. Like our perspective, however it should be interchangable, might just want to mark something that tells the computer that we are rendering with a special constant Buffer. 
 	lagInputAssembler* m_Input{nullptr};
@@ -897,7 +914,171 @@ private:
 	lagFragmentShader* m_fragShader{nullptr}; // this is all mesh information stuff. 
 };
 
+class FullScreenPass {
+public:
+	static void Init(ID3D11Texture2D* Texture) {
+		m_pTexture = Texture;
 
+		m_pView = lagDevice::CreateShaderResourceView(Texture);
+
+
+		pShaderForPass = new lagFragmentShader(lagShaderCompiler::Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\ps_full.hlsl", "PS", "ps_5_0", 0));
+		auto a = lagShaderCompiler::Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\vs_full.hlsl", "VS", "vs_5_0", 0);
+		pVShaderForPass = new lagVertexShader(a);
+		InputAssembler = Fmt.CreateLayout(a);
+		float quadVertices[] = {
+			// positions       // flipped texCoords
+			-1.0f, -1.0f,      0.0f, 1.0f,  
+			-1.0f,  1.0f,      0.0f, 0.0f,  
+			 1.0f, -1.0f,      1.0f, 1.0f,  
+
+			-1.0f,  1.0f,      0.0f, 0.0f,  
+			 1.0f,  1.0f,      1.0f, 0.0f,  
+			 1.0f, -1.0f,      1.0f, 1.0f   
+		};
+
+
+		VtxBuffer = new lagVertexBuffer(quadVertices, sizeof(float) * 24, sizeof(float) * 4);
+
+		
+		D3D11_DEPTH_STENCIL_DESC DepthDesc{};
+		DepthDesc.DepthEnable = false;
+		DepthDesc.StencilEnable = false;
+		pDepthState = lagDevice::CreateDepthStencilState(&DepthDesc);
+
+
+		m_pTarget = lagDevice::CreateRenderTarget(lagDevice::GetBackBuffer(), nullptr);
+	}
+	static void DoPass() {
+		lagDevice::GetContext()->OMSetRenderTargets(1, &m_pTarget, nullptr);
+		lagDevice::ClearRenderTarget(m_pTarget, 0.5, 0, 0, 1);
+		lagDevice::GetContext()->OMSetDepthStencilState(pDepthState, 0);
+		lagDevice::GetContext()->IASetInputLayout(nullptr);
+		UINT Stride = sizeof(float) * 4;
+		UINT Offset = 0;
+		lagDevice::GetContext()->IASetVertexBuffers(0, 1, VtxBuffer->GetBufferPtr(), &Stride, &Offset);
+		lagDevice::GetContext()->IASetIndexBuffer(nullptr, DXGI_FORMAT_UNKNOWN, 0);
+		lagDevice::GetContext()->IASetInputLayout(InputAssembler->GetLayout());
+
+		lagDevice::GetContext()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		lagDevice::GetContext()->VSSetShader(pVShaderForPass->GetShader(), nullptr, 0);
+		lagDevice::GetContext()->PSSetShader(pShaderForPass->GetShader(), nullptr, 0);
+		
+
+		lagDevice::GetContext()->PSSetShaderResources(0, 1, &m_pView);
+		
+		lagDevice::GetContext()->Draw(6, 0);
+	}
+	static void Shutdown() {
+
+	}
+private:
+	using Format = lagStaticVertexFormat<lagStaticVertexDeclaration<eStaticVertexNames::POSITION, eVertexType::VECTOR2, 0>, lagStaticVertexDeclaration<eStaticVertexNames::UVCOORD, eVertexType::VECTOR2, 0>>;
+	static inline lagInputAssembler* InputAssembler{nullptr};
+	static inline lagVertexBuffer* VtxBuffer{nullptr};
+	static inline Format Fmt{};
+	static inline ID3D11Texture2D* pMyTexture = nullptr;
+	static inline ID3D11DepthStencilState* pDepthState = nullptr;
+	static inline ID3D11RenderTargetView* m_pTarget{nullptr};
+	static inline ID3D11Texture2D* m_pTexture = nullptr;
+	static inline ID3D11ShaderResourceView* m_pView;
+	static inline lagFragmentShader* pShaderForPass = nullptr;
+	static inline lagVertexShader* pVShaderForPass = nullptr;
+};
+class CRenderEntityPass {
+public:
+	CRenderEntityPass() {
+		m_Cube = new CTestCube();
+		//m_BackBuffer = new CBackBuffer();
+
+		D3D11_TEXTURE2D_DESC Desc{};
+		lagDevice::GetBackBuffer()->GetDesc(&Desc);
+		Desc.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+
+		pRTT = lagDevice::CreateTexture2D(&Desc, nullptr);
+		pRTV = lagDevice::CreateRenderTarget(pRTT, nullptr);
+
+		Desc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+		Desc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+		pDST = lagDevice::CreateTexture2D(&Desc, nullptr);
+		pDSV = lagDevice::CreateDepthStencilView(pDST, nullptr);
+		
+		D3D11_DEPTH_STENCIL_DESC StencilDesc = {};
+		StencilDesc.DepthEnable = TRUE;
+		StencilDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+		StencilDesc.DepthFunc = D3D11_COMPARISON_LESS;
+		
+		pDSS = lagDevice::CreateDepthStencilState(&StencilDesc);
+
+		HRESULT hr{};
+		ZeroMemory(&viewport, sizeof(D3D11_VIEWPORT));
+		viewport.TopLeftX = 0;
+		viewport.TopLeftY = 0;
+		RECT rc{};
+		GetClientRect(CMainWindow::Get().GetRawWindow()->GetWindowHandle(), &rc);
+		viewport.Width = rc.right - rc.left;
+		viewport.Height = rc.bottom - rc.top;
+		GameCamera::GetRawCamera()->Viewport() = viewport;
+
+		D3D11_RASTERIZER_DESC rastDesc{};
+		rastDesc.FillMode = D3D11_FILL_SOLID;
+		rastDesc.CullMode = D3D11_CULL_BACK; // Disable culling to avoid orientation issues
+		rastDesc.DepthClipEnable = TRUE;
+
+		hr = lagDevice::GetDevice()->CreateRasterizerState(&rastDesc, &rastState);
+		lagDevice::GetContext()->RSSetState(rastState);
+	}
+	ID3D11Texture2D* GetTexture() {
+		return this->pRTT;
+	}
+	void SetRender() {
+		lagDevice::SetRenderTargets({this->pRTV}, pDSV);
+		lagDevice::GetContext()->OMSetDepthStencilState(pDSS, 0);
+	}
+	void DoPass() {
+		lagDevice::GetContext()->ClearState(); // Clear the State before the Frame
+		lagDevice::SetRenderTargets({this->pRTV}, pDSV);
+		lagDevice::ClearRenderTarget(pRTV, 1,1,1,1);
+		lagDevice::ClearDepthStencilView(this->pDSV);
+		lagDevice::GetContext()->OMSetDepthStencilState(pDSS, 0);
+		lagDevice::SetViewports({viewport});
+		lagDevice::GetContext()->RSSetState(rastState);
+		lagDevice::GetContext()->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		m_Cube->Draw();
+		//ImGui::Begin("Renderer");
+		//if (ImGui::CollapsingHeader("BackBuffer Config")) {
+		//	ImGui::ColorEdit4("Color", m_BackBuffer->Values());
+		//	//int Item = CurItem;
+		//	//ImGui::Combo("Output Merger View", &Item, this->m_OM, 2);
+		//	//if (Item != CurItem) {
+		//	//	lagDevice::SetRenderTargets({m_Views[Item]}, this->m_BackBuffer->GetDepthView());
+		//	//	CurItem = Item;
+		//	//}
+		//}
+		//ImGui::End();
+	}
+	~CRenderEntityPass() {
+		//delete m_BackBuffer;
+		delete m_Cube;
+	}
+	CTestCube& GetCube() {
+		return *m_Cube;
+	}
+private:
+	int CurItem{};
+	ID3D11RasterizerState* rastState = nullptr;
+	
+
+	ID3D11Texture2D* pRTT = nullptr;
+	ID3D11Texture2D* pDST = nullptr;
+	ID3D11RenderTargetView* pRTV = nullptr;
+	ID3D11DepthStencilState* pDSS = nullptr;
+	ID3D11DepthStencilView* pDSV = nullptr;
+
+	CTestCube* m_Cube;
+	D3D11_VIEWPORT viewport;
+
+};
 class CRenderer {
 public:
 	static CRenderer& Get() {
@@ -914,50 +1095,11 @@ public:
 	}
 	void UpdateCameraPosition() {
 	}
-	void Init(const CWindow* wind) {
+	void Init() {
 		lagDevice::Init(wind->GetWindowHandle());
 		InitDeviceLayer();
 		GameCamera::Init();
-		//m_MyCube = new CMyCube();
 
-		HRESULT hr{};
-		/* 
-		* Slowly getting to textures is scary but I think it'll be fun once I can understand how they work and allat. 
-		*/
-
-		//D3D11_BLEND_DESC blendDesc{};
-		//blendDesc.RenderTarget[0].BlendEnable = TRUE;
-		//blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
-		//blendDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
-		//blendDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
-		//blendDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-		//blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_ZERO;
-		//blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
-		//blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-
-		//ID3D11BlendState* blendState;
-		//m_pDevice->CreateBlendState(&blendDesc, &blendState);
-		//m_pContext->OMSetBlendState(blendState, nullptr, 0xFFFFFFFF);
-		//m_pContext->OMSetRenderTargets(1, &m_View, DepthView); // NO DEPTH.
-		ZeroMemory(&viewport, sizeof(D3D11_VIEWPORT));
-
-		viewport.TopLeftX = 0;
-		viewport.TopLeftY = 0;
-		RECT rc{};
-		GetClientRect(wind->GetWindowHandle(), &rc);
-		viewport.Width = rc.right - rc.left;
-		viewport.Height = rc.bottom - rc.top;
-		lagDevice::SetViewports({viewport});
-		GameCamera::GetRawCamera()->Viewport() = viewport;
-		D3D11_RASTERIZER_DESC rastDesc{};
-		rastDesc.FillMode = D3D11_FILL_SOLID;
-		rastDesc.CullMode = D3D11_CULL_BACK; // Disable culling to avoid orientation issues
-		rastDesc.DepthClipEnable = TRUE;
-
-		ID3D11RasterizerState* rastState = nullptr;
-
-		hr = lagDevice::GetDevice()->CreateRasterizerState(&rastDesc, &rastState);
-		lagDevice::GetContext()->RSSetState(rastState);
 		//SetupConstantBuffer();
 		//if (FAILED(hr)) {
 		//	std::cout << "[BUFFER]" << hr << std::endl;
@@ -965,47 +1107,61 @@ public:
 		//}
 		setup();
 	} 
-	CTestCube* m_Cube{nullptr};
-	CBackBuffer* m_BackBuffer{nullptr};
+
 	void LegacySetup() {
 		::GetDevice = lagDevice::GetDevice;
 		::GetContext = lagDevice::GetContext;
 	}
 	void setup() {
-		m_BackBuffer = new CBackBuffer();
 		LegacySetup();
-		m_Cube = new CTestCube();
+		m_pEntityPass = new CRenderEntityPass();
+		FullScreenPass::Init(m_pEntityPass->GetTexture());
+		//D3D11_TEXTURE2D_DESC Desc{};
+		//m_BackBuffer->GetDepthBuffer()->GetDesc(&Desc);
+		//Desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+		//Desc.Format = DXGI_FORMAT_R32_FLOAT;
+		//DepthTexture = lagDevice::CreateTexture2D(&Desc, nullptr);
+		//FullScreenPass::Init(DepthTexture);
+		//v = lagDevice::CreateRenderTarget(DepthTexture, nullptr);
+		//DepthBufferShaderRes = lagDevice::CreateShaderResourceView(DepthTexture);
 	}
 	void Clear() {
-		m_BackBuffer->ClearViews();
+		
 	}
-	bool HasBound = false;
+	std::vector<ID3D11RenderTargetView*> m_Views{2};
+	const char* m_OM[2] = {"Normal", "Depth"};
+	int CurItem = 0;
+	//ID3D11Texture2D* DepthTexture{};
+	//ID3D11ShaderResourceView* DepthBufferShaderRes{};
+	//ID3D11RenderTargetView* v{};
+	//bool HasBound = false;
+	bool b = false;
 	void Update() {
-		if (!HasBound) {
-			m_BackBuffer->Bind();
-			HasBound = true;
-		}
-		ImGui::Begin("Renderer");
-		if (ImGui::CollapsingHeader("BackBuffer Config")) {
-			ImGui::ColorEdit4("Color", this->m_BackBuffer->Values());
-		}
-		ImGui::End();
-
-
-		m_Cube->Draw();
+		m_pEntityPass->DoPass();
+		FullScreenPass::DoPass();
+		//if (ImGui::Begin("Fuck")) {
+		//	if (ImGui::Checkbox("Label", &b)) {
+		//		if (b) {  }
+		//		else {
+		//			m_pEntityPass->SetRender();
+		//		};
+		//	}
+		//	ImGui::End();
+		//}
 	}
 	void Present() {
 		lagDevice::Present(1, 0);
 	}
 	void Shutdown() {
+		delete m_pEntityPass;
 		GameCamera::Shutdown();
-		delete m_BackBuffer;
 		lagShaderCompiler::DestroyClass();
 		lagDevice::Shutdown();
 	}
 private:
-	D3D11_VIEWPORT viewport;
+	CRenderEntityPass* m_pEntityPass = nullptr;
 };
+
 class CApplication {
 public:
 	static CApplication& Get() {
@@ -1015,9 +1171,7 @@ public:
 #ifdef LE_WIN
 		m_Arguments = (CWinArgs*)legit::g_Args;
 		CLogger::Init();
-		CWindowEvents::InitClass(); // Has to happen before the Window class Inits. 
-		m_Window = new CMainWindow(m_Arguments);
-		CRenderer::Get().Init(m_Window->GetRawWindow());
+		CRenderer::Get().Init();
 		m_Debug = new CDebug();
 #else
 		printf("[Error]: Unknown/Unanticipated Platform. We are unable to support your operating system or platform.");
@@ -1026,15 +1180,7 @@ public:
 		return;
 	}
 	void Update() {
-		CRenderer::Get().Clear();
-		m_Debug->BeginFrame();
 
-		this->m_bStopRunning = m_Window->g_Close;
-		m_Window->Poll();
-
-		CRenderer::Get().Update();
-		m_Debug->EndFrame();
-		CRenderer::Get().Present();
 	}
 	void Run() {
 		Init();
@@ -1046,13 +1192,10 @@ public:
 	void Shutdown() {
 		CRenderer::Get().Shutdown();
 		delete m_Debug;
-		delete m_Window;
 		CLogger::Shutdown();
 	}
-	CMainWindow* GetWindow() { return m_Window; }
 private:
 	CDebug* m_Debug = nullptr;
-	CMainWindow* m_Window = nullptr;
 #ifdef LE_WIN32
 	CWinArgs*
 #else 
@@ -1061,3 +1204,4 @@ private:
 	m_Arguments = nullptr;
 	bool m_bStopRunning = false;
 };
+#endif // USE_RENDERER
