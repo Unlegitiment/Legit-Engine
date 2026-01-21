@@ -101,6 +101,9 @@
     <ClInclude Include="stbi_import.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="lagGraphics.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

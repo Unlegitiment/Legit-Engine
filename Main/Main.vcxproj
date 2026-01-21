@@ -152,6 +152,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Exception\exception.h" />
+    <ClInclude Include="lagGraphics.h" />
     <ClInclude Include="LIT_Start\ScopedPtr.h" />
     <ClInclude Include="Logger\GameLogger.h" />
     <ClInclude Include="stbi_import.h" />

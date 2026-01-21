@@ -9,12 +9,10 @@ using namespace legit;
 
 #ifdef LE_WIN
 #include <Windows.h>
-#include <d3d11.h>
-#include <dxgi.h>
+
+#include "lagGraphics.h"
 #include <DirectXMath.h>
-#include <d3dcompiler.h>
-#pragma comment(lib,"d3d11.lib")
-#pragma comment(lib, "d3dcompiler.lib")
+
 #include <chrono>
 class CTimer {
 public:
@@ -76,7 +74,10 @@ private:
 struct WindowDescription {
 	const wchar_t* WindowName;
 };
-#include <vector>
+#include "imgui.h"
+#include "imgui_impl_dx11.h"
+#include "imgui_impl_win32.h"
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 class CWindow {
 public:
 	explicit CWindow(CWindowClass* WindClass, WindowDescription Desc) : m_Class(WindClass){
@@ -119,6 +120,7 @@ DEFINE_HANDLER(Close) {
 	}
 	return 0;
 }
+
 DEFINE_HANDLER(Input) {
 	OutputDebugStringA(__FUNCTION__ "\n");
 	return 0;
@@ -127,6 +129,9 @@ DEFINE_HANDLER(Input) {
 #define ProcDef(WndMsg, Func) case WndMsg: return Func(wnd, msg, wP, lParam);
 #define ProcDefault() default: DefWindowProc(wnd, msg, wP, lParam);
 static LRESULT LE_Process(HWND wnd, UINT msg, WPARAM wP, LPARAM lParam) { // The developers who made this garbage should be killed. God I hate it. 
+	if (ImGui_ImplWin32_WndProcHandler(wnd, msg, wP, lParam)) {
+		return true;
+	}
 	switch (msg) {
 		ProcDef(WM_CLOSE, HandleClose);
 		ProcDef(WM_INPUT, HandleInput);
@@ -135,283 +140,47 @@ static LRESULT LE_Process(HWND wnd, UINT msg, WPARAM wP, LPARAM lParam) { // The
 }
 #undef ProcDef
 #undef ProcDefault
-struct lagByteCode {
-	std::vector<char> Byte;
+
+class CGameWindow {
+public:
+	static void Init() {
+		WindowClassDesc desc{};
+		desc.hInstance = GetModuleHandle(0);
+		desc.Process = LE_Process;
+		desc.WindowClassName = L"WindowClass";
+		m_Class = new CWindowClass(desc);
+		WindowDescription wind{};
+		wind.WindowName = L"Test";
+		m_Window = new CWindow(m_Class, wind);
+		m_Window->Show();
+	}
+	static bool Update() {
+		MSG m{};
+		if (m_Window->Peek(m)) {
+			TranslateMessage(&m);
+			DispatchMessage(&m);
+			if (m.message == WM_QUIT) {
+				return true;
+			}
+		}
+		return false;
+	}
+	static void Destroy() {
+		delete m_Window;
+		delete m_Class;
+	}
+	static CWindow* GetWindow() {
+		return m_Window;
+	}
+	static CWindowClass* GetWindowClass() {
+		return m_Class;
+	}
+	CGameWindow& operator=(const CGameWindow&) noexcept = delete;
+private:
+	static inline CWindowClass* m_Class{nullptr};
+	static inline CWindow* m_Window{nullptr};
 };
-class lagShaderCompiler {
-public:
-	lagByteCode Compile(const wchar_t* ShaderPath, const char* ShaderEntry, const char* ShaderVersion) {
-		ID3DBlob* pBlob, *pErr{};
-		HRESULT hr = D3DCompileFromFile(ShaderPath, NULL, NULL, ShaderEntry, ShaderVersion, 0, 0, &pBlob, &pErr);
-		if (FAILED(hr)) {
-			OutputDebugStringA((char*)pErr->GetBufferPointer());
-			OutputDebugStringA("\n");
-			__debugbreak();
-		}
-		lagByteCode c{};
-		c.Byte.resize(pBlob->GetBufferSize());
-		memcpy(c.Byte.data(), pBlob->GetBufferPointer(), sizeof(char) * pBlob->GetBufferSize());
-		return c;
-	}
-private:
-
-};
-using lagDeviceHandle = ID3D11Device;
-using lagDeviceContext = ID3D11DeviceContext;
-using lagSwapChain = IDXGISwapChain;
-using lagResource = ID3D11Resource;
-
-using lagVertexShader = ID3D11VertexShader;
-using lagFragmentShader = ID3D11PixelShader;
-using lagDomainShader = ID3D11DomainShader;
-using lagGeometryShader = ID3D11GeometryShader;
-using lagHullShader = ID3D11HullShader;
-
-using lagRenderTarget = ID3D11RenderTargetView;
-using lagShaderResource = ID3D11ShaderResourceView;
-using lagSampler = ID3D11SamplerState;
-
-using lagTexture2D = ID3D11Texture2D;
-using lagBuffer = ID3D11Buffer;
-using lagInputAssembler = ID3D11InputLayout;
-using lagPrimitiveTopology = D3D11_PRIMITIVE_TOPOLOGY;
-using lagRasterizerState = ID3D11RasterizerState;
-
-
-class lagGraphics final {
-public:
-	static void Init(HWND Window) {
-		D3D_FEATURE_LEVEL FeatureLevel = D3D_FEATURE_LEVEL_11_0;
-		DXGI_SWAP_CHAIN_DESC Desc{};
-		Desc.BufferDesc.Width = 0;
-		Desc.BufferDesc.Height = 0;
-		Desc.BufferDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-		Desc.BufferDesc.RefreshRate.Numerator = 0;
-		Desc.BufferDesc.RefreshRate.Denominator = 0;
-		Desc.BufferDesc.Scaling = DXGI_MODE_SCALING_UNSPECIFIED;
-		Desc.BufferDesc.ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED;
-		Desc.SampleDesc.Count = 1;
-		Desc.SampleDesc.Quality = 0;
-		Desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-		Desc.BufferCount = 1;
-		Desc.OutputWindow = (HWND)Window;
-		Desc.Windowed = true;
-		Desc.SwapEffect = DXGI_SWAP_EFFECT_DISCARD;
-		Desc.Flags = 0;
-		D3D_FEATURE_LEVEL ReturnLevel{};
-		HRESULT hr = D3D11CreateDeviceAndSwapChain(NULL,
-			D3D_DRIVER_TYPE_HARDWARE,
-			NULL,
-			D3D11_CREATE_DEVICE_DEBUG,
-			&FeatureLevel,
-			1,
-			D3D11_SDK_VERSION,
-			&Desc,
-			&sm_pSwapChain, &sm_pDevice, &ReturnLevel, &sm_pDeviceContext
-		);
-		if (FAILED(hr)) {
-			OutputDebugStringA("[D3D11-INIT]: Failure in initializing D3D11. Cannot render!\\n");
-			__debugbreak();
-		}
-		sm_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&sm_pTexture));
-	}
-	static void Shutdown() {
-		sm_pTexture->Release();
-		sm_pDevice->Release();
-		sm_pDeviceContext->Release();
-		sm_pSwapChain->Release();
-	}
-	static void SetRenderTargets(std::vector<lagRenderTarget*> pTargets, ID3D11DepthStencilView* DepthStencil) {
-		sm_pDeviceContext->OMSetRenderTargets(pTargets.size(), pTargets.data(), DepthStencil);
-	}
-	static void ClearRenderTarget(lagRenderTarget* pTarget, float* Color) {
-		sm_pDeviceContext->ClearRenderTargetView(pTarget, Color);
-	}
-	static void Present(unsigned long SyncInterval, unsigned long Flags) {
-		sm_pSwapChain->Present(SyncInterval, Flags);
-	}
-	static lagBuffer* CreateBuffer(const D3D11_BUFFER_DESC* pBuffer, D3D11_SUBRESOURCE_DATA* pData) {
-		lagBuffer* Buffer{nullptr};
-		HRESULT hr = sm_pDevice->CreateBuffer(pBuffer, pData, &Buffer);
-		if (FAILED(hr)) {
-			return nullptr;
-		}
-		return Buffer;
-	}
-	static lagRasterizerState* CreateRasterizationState(const D3D11_RASTERIZER_DESC* pState) {
-		lagRasterizerState* pRet{};
-		HRESULT hr = sm_pDevice->CreateRasterizerState(pState, &pRet);
-		if (FAILED(hr)) {
-			return nullptr;
-		}
-		return pRet;
-	}
-	static lagVertexShader* CreateVertexShader(std::vector<char>& ByteCode, ID3D11ClassLinkage* Linkage = nullptr) {
-		lagVertexShader* pVer{};
-		HRESULT hr = sm_pDevice->CreateVertexShader(ByteCode.data(), ByteCode.size(), Linkage, &pVer);
-		if (FAILED(hr)) {
-			return nullptr;
-		} 
-		return pVer;
-	}
-	static lagFragmentShader* CreateFragmentShader(std::vector<char>& ByteCode, ID3D11ClassLinkage* Linkage = nullptr) {
-		lagFragmentShader* pVer{};
-		HRESULT hr = sm_pDevice->CreatePixelShader(ByteCode.data(), ByteCode.size(), Linkage, &pVer);
-		if (FAILED(hr)) {
-			return nullptr;
-		}
-		return pVer;
-	}
-	static lagInputAssembler* CreateInputAssembler(const std::vector<D3D11_INPUT_ELEMENT_DESC>& Descs, const std::vector<char>& ShaderByte) {
-		lagInputAssembler* pAssembler{nullptr};
-		HRESULT hr = sm_pDevice->CreateInputLayout(Descs.data(), Descs.size(), ShaderByte.data(), ShaderByte.size(), &pAssembler);
-		if (FAILED(hr)) {
-			return nullptr;
-		}
-		return pAssembler;
-	}
-	static lagRenderTarget* CreateRenderTarget(lagResource* Resource, const D3D11_RENDER_TARGET_VIEW_DESC* Desc = nullptr) {
-		lagRenderTarget* Target{nullptr};
-		HRESULT hr = sm_pDevice->CreateRenderTargetView(Resource, Desc, &Target);
-		if (FAILED(hr)) {
-			return nullptr;
-		}
-		return Target;
-	}
-	static lagTexture2D* CreateTexture2D(const D3D11_TEXTURE2D_DESC* Desc, D3D11_SUBRESOURCE_DATA* pData) {
-		lagTexture2D* pTexture = nullptr;
-		HRESULT hr = sm_pDevice->CreateTexture2D(Desc, pData, &pTexture);
-		if (FAILED(hr)) {
-			return nullptr;
-		} 
-		return pTexture;
-	}
-	static lagShaderResource* CreateShaderResource(lagResource* pRes, const D3D11_SHADER_RESOURCE_VIEW_DESC* Desc) {
-		lagShaderResource* View{nullptr};
-		HRESULT hr = sm_pDevice->CreateShaderResourceView(pRes, Desc, &View);
-		if (FAILED(hr)) {
-			return nullptr;
-		}
-		return View;
-	}
-	static lagResource* GetBackBuffer() {
-		return sm_pTexture;
-	}
-public:
-	static void Draw(UINT VertexCount, UINT VertexStart) {
-		sm_pDeviceContext->Draw(VertexCount, VertexStart);
-	}
-	static void DrawIndexed(UINT IndexCount, UINT VertexStart, UINT VertexLocation) {
-		sm_pDeviceContext->DrawIndexed(IndexCount, VertexStart, VertexLocation);
-	}
-	static void* Map(lagResource* Resource, UINT Subresource, D3D11_MAP MapType, UINT MapFlags) {
-		D3D11_MAPPED_SUBRESOURCE Data{};
-		sm_pDeviceContext->Map(Resource, Subresource, MapType, MapFlags, &Data);
-		return Data.pData;
-	}
-	static void Unmap(lagResource* Resource, UINT subresource) {
-		sm_pDeviceContext->Unmap(Resource, subresource);
-	}
-public:
-	static void SetVertexShader(lagVertexShader* Shader) {
-		if (sm_pCurrentVertexShader == Shader) return;
-		sm_pDeviceContext->VSSetShader(Shader, nullptr, 0);
-		sm_pCurrentVertexShader = Shader;
-	}
-	static void SetVertexShaderBuffers(UINT StartSlot, const std::vector<lagBuffer*>& buffers) {
-		sm_pDeviceContext->VSSetConstantBuffers(StartSlot, buffers.size(), buffers.data());
-	}
-	static void SetFragmentShader(lagFragmentShader* Shader) {
-		if (sm_pCurrentFragmentShader == Shader) return;
-		sm_pDeviceContext->PSSetShader(Shader, nullptr, 0);
-		sm_pCurrentFragmentShader = Shader;
-	}
-	static void SetFragmentShaderBuffers(UINT StartSlot, const std::vector<lagBuffer*>& buffers) {
-		sm_pDeviceContext->PSSetConstantBuffers(StartSlot, buffers.size(), buffers.data());
-	}
-	static void SetFragmentShaderResources(UINT StartSlot, const std::vector<lagShaderResource*> Resources) {
-		sm_pDeviceContext->PSSetShaderResources(StartSlot, Resources.size(), Resources.data());
-	}
-	static void SetFragmentShaderSamplers(UINT StartSlot, const std::vector<lagSampler*>& Sampler) {
-		sm_pDeviceContext->PSSetSamplers(0, Sampler.size(), Sampler.data());
-	}
-	static void SetHullShader(lagHullShader* Shader) {
-		if (sm_pCurrentHullShader == Shader) return;
-		sm_pDeviceContext->HSSetShader(Shader, nullptr, 0);
-		sm_pCurrentHullShader = Shader;
-	}
-	static void SetDomainShader(lagDomainShader* Shader) {
-		if (sm_pCurrentDomainShader == Shader) return;
-		sm_pDeviceContext->DSSetShader(Shader, nullptr, 0);
-		sm_pCurrentDomainShader = Shader;
-	}
-	static void SetGeometryShader(lagGeometryShader* Shader) {
-		if (sm_pCurrentGeometryShader == Shader) return;
-		sm_pDeviceContext->GSSetShader(Shader, nullptr, 0);
-		sm_pCurrentGeometryShader = Shader;
-	}
-	static void SetInputAssembler(lagInputAssembler* Assembler) {
-		if (sm_pCurrentAssembler == Assembler)return;
-		sm_pDeviceContext->IASetInputLayout(Assembler);
-		sm_pCurrentAssembler = Assembler;
-	}
-	static void SetPrimitiveTopology(lagPrimitiveTopology Top) {
-		if (sm_CurrentTopology == Top) return;
-		sm_pDeviceContext->IASetPrimitiveTopology(Top);
-		sm_CurrentTopology = Top;
-	}
-	static void SetRasterizerState(lagRasterizerState* Rasterizer) {
-		if (sm_pCurrentRasterizerState == Rasterizer) return;
-		sm_pDeviceContext->RSSetState(Rasterizer);
-		sm_pCurrentRasterizerState = Rasterizer;
-	}
-	static void SetVertexBuffers(UINT StartSlot, const std::vector<lagBuffer*>& buffers, const UINT* Strides, const UINT* Offsets) {
-		sm_pDeviceContext->IASetVertexBuffers(StartSlot, buffers.size(), buffers.data(), Strides, Offsets);
-	}
-	static void SetIndexBuffer(lagBuffer* Buffer, DXGI_FORMAT Format, UINT Offset) {
-		if (sm_pCurrentIndexBuffer == Buffer) return;
-		sm_pDeviceContext->IASetIndexBuffer(Buffer, Format, Offset);
-		sm_pCurrentIndexBuffer = Buffer;
-	}
-	static void SetViewports(const std::vector<D3D11_VIEWPORT>& Ports) {
-		sm_pDeviceContext->RSSetViewports(Ports.size(), Ports.data());
-	}
-
-private:
-	lagGraphics() = delete;
-	lagGraphics(const lagGraphics&) = delete;
-	lagGraphics& operator=(const lagGraphics&) = delete;
-	lagGraphics& operator=(lagGraphics&&) = delete;
-	lagGraphics(lagGraphics&&) = delete;
-	~lagGraphics() {}
-private:
-	static inline lagVertexShader* sm_pCurrentVertexShader = nullptr;
-	static inline lagFragmentShader* sm_pCurrentFragmentShader = nullptr;
-	static inline lagHullShader* sm_pCurrentHullShader = nullptr;
-	static inline lagDomainShader* sm_pCurrentDomainShader = nullptr;
-	static inline lagGeometryShader* sm_pCurrentGeometryShader = nullptr;
-	static inline lagInputAssembler* sm_pCurrentAssembler = nullptr;
-	static inline lagPrimitiveTopology sm_CurrentTopology = lagPrimitiveTopology::D3D11_PRIMITIVE_TOPOLOGY_UNDEFINED;
-	static inline lagRasterizerState* sm_pCurrentRasterizerState = nullptr;
-	static inline lagBuffer* sm_pCurrentIndexBuffer = nullptr;
-private:
-	static inline lagResource* sm_pTexture{nullptr};
-	static inline lagDeviceHandle* sm_pDevice{nullptr};
-	static inline lagDeviceContext* sm_pDeviceContext{nullptr};
-	static inline lagSwapChain* sm_pSwapChain{nullptr};
-};
-class CRenderPass_GameEntities {
-public:
-	CRenderPass_GameEntities(lagGraphics* pDevice) : m_pDevice(pDevice){
-
-	}
-	~CRenderPass_GameEntities() {
-		m_pDevice = nullptr;
-	}
-private:
-	lagGraphics* m_pDevice;
-};
-template<typename T, size_t Size> size_t ArraySize(const T(&Op)[Size]) {
+template<typename T, size_t Size> constexpr size_t ArrayBytes(const T(&Op)[Size]) {
 	return sizeof(T) * Size;
 }
 class CBaseEntity {
@@ -444,17 +213,13 @@ public:
 		D3D11_BUFFER_DESC m_Desc{};
 		m_Desc.Usage = D3D11_USAGE_IMMUTABLE;
 		m_Desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
-		m_Desc.ByteWidth = ArraySize(quadVertices);
+		m_Desc.ByteWidth = ArrayBytes(quadVertices);
 		D3D11_SUBRESOURCE_DATA Data{};
 		Data.pSysMem = quadVertices;
 		Buffer = lagGraphics::CreateBuffer(&m_Desc, &Data);
-
-
 		lagShaderCompiler Comp{};
-
 		lagByteCode Byte = Comp.Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\lag_basic.hlsl", "VS_Main", "vs_5_0");
 		VSShader = lagGraphics::CreateVertexShader(Byte.Byte);
-
 		D3D11_INPUT_ELEMENT_DESC Desc{};
 		Desc.Format = DXGI_FORMAT_R32G32B32_FLOAT;
 		Desc.SemanticName = "POSITION";
@@ -477,7 +242,9 @@ public:
 		PSShader = lagGraphics::CreateFragmentShader(Byte.Byte);
 	}
 	DirectX::XMMATRIX GetMatrix() const {
-		return DirectX::XMMatrixTranslationFromVector(DirectX::XMLoadFloat3(&m_Position)) * DirectX::XMMatrixRotationRollPitchYawFromVector(DirectX::XMLoadFloat3(&m_Rotation)) * DirectX::XMMatrixScalingFromVector(DirectX::XMLoadFloat3(&m_Scale));
+		auto x = DirectX::XMMatrixTranslationFromVector(DirectX::XMLoadFloat3(&m_Position))* DirectX::XMMatrixRotationRollPitchYawFromVector(DirectX::XMLoadFloat3(&m_Rotation))* DirectX::XMMatrixScalingFromVector(DirectX::XMLoadFloat3(&m_Scale));
+		x = DirectX::XMMatrixTranspose(x);
+		return x;
 	}
 	void Draw() {
 		const UINT stride = sizeof(float) * 5;
@@ -549,16 +316,178 @@ private:
 	lagTexture2D* m_pTexture = nullptr;
 	lagShaderResource* SRV = nullptr;
 };
+class CCube : public CBaseEntity{
+public:
+	CCube() {
+		m_Position = DirectX::XMFLOAT3(0, 0, 0); m_Rotation = DirectX::XMFLOAT3(0, 0, 0); m_Scale = DirectX::XMFLOAT3(1, 1, 1);
+		D3D11_BUFFER_DESC m_Desc{};
+		m_Desc.Usage = D3D11_USAGE_IMMUTABLE;
+		m_Desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+		m_Desc.ByteWidth = ArrayBytes(Vertices);
+		D3D11_SUBRESOURCE_DATA Data{};
+		Data.pSysMem = Vertices;
+		Buffer = lagGraphics::CreateBuffer(&m_Desc, &Data);
+		lagShaderCompiler Comp{};
+		lagByteCode Byte = Comp.Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\lag_basic.hlsl", "VS_Main", "vs_5_0");
+		VSShader = lagGraphics::CreateVertexShader(Byte.Byte);
+
+		D3D11_INPUT_ELEMENT_DESC Desc{};
+		Desc.Format = DXGI_FORMAT_R32G32B32_FLOAT;
+		Desc.SemanticName = "POSITION";
+		Desc.SemanticIndex = 0;
+		Desc.InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
+		Desc.InputSlot = 0;
+		Desc.AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT;
+
+		D3D11_INPUT_ELEMENT_DESC Desc2{};
+		Desc2.Format = DXGI_FORMAT_R32G32_FLOAT;
+		Desc2.SemanticName = "UVCOORD";
+		Desc2.SemanticIndex = 0;
+		Desc2.InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
+		Desc2.InputSlot = 0;
+		Desc2.AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT;
+
+		InputAssembler = lagGraphics::CreateInputAssembler({Desc, Desc2}, Byte.Byte);
+
+		Byte = Comp.Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\lag_basic.hlsl", "PS_Main", "ps_5_0");
+		PSShader = lagGraphics::CreateFragmentShader(Byte.Byte);
+	}
+	DirectX::XMMATRIX GetMatrix() const {
+		return DirectX::XMMatrixTranslationFromVector(DirectX::XMLoadFloat3(&m_Position)) * DirectX::XMMatrixRotationRollPitchYawFromVector(DirectX::XMLoadFloat3(&m_Rotation)) * DirectX::XMMatrixScalingFromVector(DirectX::XMLoadFloat3(&m_Scale));
+	}
+	void Draw() {
+		const UINT stride = sizeof(float) * 5;
+		const UINT offset = 0;
+
+		lagGraphics::SetVertexBuffers(0, {Buffer}, &stride, &offset);
+		lagGraphics::SetFragmentShader(PSShader);
+		lagGraphics::SetVertexShader(VSShader);
+		lagGraphics::SetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		lagGraphics::SetInputAssembler(InputAssembler);
+		lagGraphics::Draw(36, 0);
+	}
+private:
+	lagInputAssembler* InputAssembler = nullptr;
+	lagVertexShader* VSShader = nullptr;
+	lagFragmentShader* PSShader = nullptr;
+	lagBuffer* Buffer = nullptr;
+	float Vertices[36 * 5] = {
+	// Back face (z = -0.5)
+	-0.5f, -0.5f, -0.5f,   0.0f, 1.0f,
+	 0.5f,  0.5f, -0.5f,   1.0f, 0.0f,
+	 0.5f, -0.5f, -0.5f,   1.0f, 1.0f,
+
+	-0.5f, -0.5f, -0.5f,   0.0f, 1.0f,
+	-0.5f,  0.5f, -0.5f,   0.0f, 0.0f,
+	 0.5f,  0.5f, -0.5f,   1.0f, 0.0f,
+
+	// Front face (z = +0.5)
+	-0.5f, -0.5f,  0.5f,   0.0f, 1.0f,
+	 0.5f, -0.5f,  0.5f,   1.0f, 1.0f,
+	 0.5f,  0.5f,  0.5f,   1.0f, 0.0f,
+
+	-0.5f, -0.5f,  0.5f,   0.0f, 1.0f,
+	 0.5f,  0.5f,  0.5f,   1.0f, 0.0f,
+	-0.5f,  0.5f,  0.5f,   0.0f, 0.0f,
+
+	// Left face (x = -0.5)
+	-0.5f, -0.5f, -0.5f,   0.0f, 1.0f,
+	-0.5f, -0.5f,  0.5f,   1.0f, 1.0f,
+	-0.5f,  0.5f,  0.5f,   1.0f, 0.0f,
+
+	-0.5f, -0.5f, -0.5f,   0.0f, 1.0f,
+	-0.5f,  0.5f,  0.5f,   1.0f, 0.0f,
+	-0.5f,  0.5f, -0.5f,   0.0f, 0.0f,
+
+	// Right face (x = +0.5)
+	 0.5f, -0.5f, -0.5f,   0.0f, 1.0f,
+	 0.5f,  0.5f,  0.5f,   1.0f, 0.0f,
+	 0.5f, -0.5f,  0.5f,   1.0f, 1.0f,
+
+	 0.5f, -0.5f, -0.5f,   0.0f, 1.0f,
+	 0.5f,  0.5f, -0.5f,   0.0f, 0.0f,
+	 0.5f,  0.5f,  0.5f,   1.0f, 0.0f,
+
+	// Top face (y = +0.5)
+	-0.5f,  0.5f, -0.5f,   0.0f, 1.0f,
+	-0.5f,  0.5f,  0.5f,   0.0f, 0.0f,
+	 0.5f,  0.5f,  0.5f,   1.0f, 0.0f,
+
+	-0.5f,  0.5f, -0.5f,   0.0f, 1.0f,
+	 0.5f,  0.5f,  0.5f,   1.0f, 0.0f,
+	 0.5f,  0.5f, -0.5f,   1.0f, 1.0f,
+
+	// Bottom face (y = -0.5)
+	-0.5f, -0.5f, -0.5f,   0.0f, 1.0f,
+	 0.5f, -0.5f,  0.5f,   1.0f, 0.0f,
+	-0.5f, -0.5f,  0.5f,   0.0f, 0.0f,
+
+	-0.5f, -0.5f, -0.5f,   0.0f, 1.0f,
+	 0.5f, -0.5f, -0.5f,   1.0f, 1.0f,
+	 0.5f, -0.5f,  0.5f,   1.0f, 0.0f,
+	};
+};
+class CTexturedCube : public CCube{
+public:
+	CTexturedCube() {
+		const char* Path = "E:\\WIN_BACKUP\\PICS\\Screenshots\\Screenshot 2024-02-25 164512.png";
+
+		int x, y, w;
+		stbi_uc* buff = stbi_load(Path, &x, &y, &w, 4);
+		float fImageAspect = (float)x / (float)y;
+		float fScalar = 2.5f;
+		SetScale(DirectX::XMFLOAT3(fImageAspect * fScalar, 1.0 * fScalar, fImageAspect * fScalar));
+		D3D11_TEXTURE2D_DESC textureDesc = {};
+		textureDesc.Width = x;
+		textureDesc.Height = y;
+		textureDesc.MipLevels = 1; // im not gonna abstract these yet.
+		textureDesc.ArraySize = 1;
+		textureDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+		textureDesc.SampleDesc.Count = 1;
+		textureDesc.Usage = D3D11_USAGE_IMMUTABLE;
+		textureDesc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+		D3D11_SUBRESOURCE_DATA textureResourceData{};
+		textureResourceData.pSysMem = buff;
+		textureResourceData.SysMemPitch = x * sizeof(UINT);
+		m_pTexture = lagGraphics::CreateTexture2D(&textureDesc, &textureResourceData);
+		this->SRV = lagGraphics::CreateShaderResource(m_pTexture, nullptr);
+		stbi_image_free(buff);
+		this->fAspect = fImageAspect;
+	}
+	void Draw() {
+		lagGraphics::SetFragmentShaderResources(0, {SRV});
+		CCube::Draw();
+	}
+private:
+	lagTexture2D* m_pTexture;
+	lagShaderResource* SRV;
+	float fAspect{};
+};
+
 struct LAGMatrices {
 	DirectX::XMMATRIX m_Projection;
 	DirectX::XMMATRIX m_View;
 	DirectX::XMMATRIX m_Model;
 };
-class CRenderer {
+class CDefaultPass{
 public:
 	static void Init(HWND Window) {
-		lagGraphics::Init(Window);
 		sm_pRTV = lagGraphics::CreateRenderTarget(lagGraphics::GetBackBuffer());
+		D3D11_TEXTURE2D_DESC depthBufferDesc{};
+		lagTexture2D* BB = (lagTexture2D*)lagGraphics::GetBackBuffer();
+		BB->GetDesc(&depthBufferDesc);
+		depthBufferDesc.Format = DXGI_FORMAT_D24_UNORM_S8_UINT;
+		depthBufferDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+		lagTexture2D* DepthTexture = lagGraphics::CreateTexture2D(&depthBufferDesc, nullptr);
+		sm_pDTV = lagGraphics::CreateDepthView(DepthTexture, nullptr);
+		D3D11_DEPTH_STENCIL_DESC DSDesc{};
+		DSDesc.DepthEnable = true;
+		DSDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
+		DSDesc.DepthFunc = D3D11_COMPARISON_LESS;
+		sm_pDSS = lagGraphics::CreateDepthState(&DSDesc);
+
+		lagGraphics::SetDepthState(sm_pDSS, 0);
+		
 		float quadVertices[] = {
 			// positions       // flipped texCoords
 			-1.0f, -1.0f,0.0,      0.0f, 1.0f,
@@ -569,7 +498,7 @@ public:
 			 1.0f, -1.0f,0.0,      1.0f, 1.0f
 		};
 		D3D11_RASTERIZER_DESC RasterDesc{};
-		RasterDesc.CullMode = D3D11_CULL_BACK;
+		RasterDesc.CullMode = D3D11_CULL_NONE;
 		RasterDesc.DepthClipEnable = true;
 		RasterDesc.FillMode = D3D11_FILL_SOLID;
 		lagRasterizerState* pState{};
@@ -584,7 +513,9 @@ public:
 		Port.Width = rc.right - rc.left;
 		Port.Height = rc.bottom - rc.top;
 		lagGraphics::SetViewports({Port});
-		lagGraphics::SetRenderTargets({sm_pRTV}, nullptr);
+
+
+		lagGraphics::SetRenderTargets({sm_pRTV}, sm_pDTV);
 
 		D3D11_BUFFER_DESC BufferDesc{};
 		BufferDesc.ByteWidth = sizeof(LAGMatrices);
@@ -593,28 +524,43 @@ public:
 		BufferDesc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 		LAGConstants = lagGraphics::CreateBuffer(&BufferDesc, nullptr);
 		Quad = new CBillboard();
+		Cube = new CTexturedCube();
 	}
 	static inline lagBuffer* LAGConstants = nullptr;
 	static inline CBillboard* Quad = nullptr;
+	static inline CTexturedCube* Cube = nullptr;
+	static void SetupCamera(LAGMatrices* Mats) {
+		Mats->m_View = DirectX::XMMatrixTranspose(DirectX::XMMatrixLookAtLH({4,2.5,-5}, {0,0,0}, {0,1,0}));
+		Mats->m_Projection = DirectX::XMMatrixTranspose(DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(90.0f), 16.0f / 9.0f, 0.01f, 250));
+	}
+	template<typename T> static void RenderItem(LAGMatrices* Constants, T* item) {
+		Constants->m_Model = item->GetMatrix();
+
+		LAGMatrices* mats{nullptr};
+		mats = (LAGMatrices*)lagGraphics::Map(LAGConstants, 0, D3D11_MAP_WRITE_DISCARD, 0);
+		memcpy(mats, Constants, sizeof(LAGMatrices));
+		lagGraphics::Unmap(LAGConstants, 0);
+
+		lagGraphics::SetVertexShaderBuffers(0, {LAGConstants});
+		item->Draw();
+	}
 	static void Process() {
 		float f[4] = {0.5,0,0,1};
 		lagGraphics::ClearRenderTarget(sm_pRTV, f);
-
+		lagGraphics::ClearDepthView(sm_pDTV, D3D11_CLEAR_DEPTH, 1.0, 0);
 		LAGMatrices Constants{};
-		Constants.m_View = DirectX::XMMatrixLookAtLH({2,0,-5}, {0,0,0}, {0,1,0});
-		Constants.m_Projection = DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(90.0f), 16.0f / 9.0f, 0.01f, 100);
-		Constants.m_Model = Quad->GetMatrix();
+		LAGMatrices* mats = nullptr;
+		SetupCamera(&Constants);
 
-		Constants.m_Model = DirectX::XMMatrixTranspose(Constants.m_Model);
-		Constants.m_View = DirectX::XMMatrixTranspose(Constants.m_View);
-		Constants.m_Projection = DirectX::XMMatrixTranspose(Constants.m_Projection);
+		//Quad->SetPosition({0,0,2});
+		
+		//Cube->SetPosition({0,0,0});
 
-		LAGMatrices* mats = (LAGMatrices*)lagGraphics::Map(LAGConstants, 0, D3D11_MAP_WRITE_DISCARD, 0);
-		memcpy(mats, &Constants, sizeof(LAGMatrices));
-		lagGraphics::Unmap(LAGConstants, 0);
-		lagGraphics::SetVertexShaderBuffers(0, {LAGConstants});
 
-		Quad->Draw();
+		RenderItem(&Constants, Quad);
+
+		RenderItem(&Constants, Cube);
+
 		lagGraphics::Present(1, 0);
 	}
 	static void Destroy() {
@@ -622,34 +568,233 @@ public:
 	}
 private:
 	static inline lagRenderTarget* sm_pRTV{nullptr};
+	static inline lagDepthView* sm_pDTV{nullptr};
+	static inline lagDepthState* sm_pDSS{nullptr};
+};
+class CQuadVertices {
+public:
+	const float quadVertices[30] = {
+		// positions       // flipped texCoords
+		-1.0f, -1.0f,0,      0.0f, 1.0f,
+		-1.0f,  1.0f,0,      0.0f, 0.0f,
+		 1.0f, -1.0f,0,      1.0f, 1.0f,
+		-1.0f,  1.0f,0,      0.0f, 0.0f,
+		 1.0f,  1.0f,0,      1.0f, 0.0f,
+		 1.0f, -1.0f,0,      1.0f, 1.0f
+	};
+	CQuadVertices(){
+		D3D11_BUFFER_DESC m_Dsc{};
+		m_Dsc.ByteWidth = sizeof(quadVertices);
+		m_Dsc.Usage = D3D11_USAGE_IMMUTABLE;
+		m_Dsc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+		D3D11_SUBRESOURCE_DATA data{};
+		data.pSysMem = quadVertices;
+		this->Vertices = lagGraphics::CreateBuffer(&m_Dsc, &data);
+	}
+	void Bind(const unsigned int* Stride, const unsigned int* Offset) {
+		lagGraphics::SetVertexBuffers(0, {Vertices}, Stride, Offset);
+	}
+	~CQuadVertices() {
+
+	}
+private:
+	lagBuffer* Vertices{};
+};
+class ShaderComp : private lagShaderCompiler{
+private:
+	lagByteCode _Compile(const wchar_t* Path, const char* Entry, const char* Ver = "vs_5_0") {
+		return lagShaderCompiler::Compile(Path, Entry, Ver);
+	}
+public:
+	static lagByteCode Compile(const wchar_t* Path, const char* Entry, const char* Ver = "vs_5_0") {
+		ShaderComp Comp{};
+		return Comp._Compile(Path, Entry, Ver);
+	}
+};
+/* 
+	If theres one thing that I've learned is that you can make any abstraction "decent" just as long as the original is so primitive that its possible. 
+	Also that you get more of an idea of how things should be worked into things whether they should be global or not. (I primarily am talking about CGameWindow) 
+	CGameWindow is a perfect example, as its a item that is general to the application and wouldn't be reusable as a result, but also it uses an abstraction and as well is a global. 
+	If I eventually find that I don't actually need it, I can remove it and add it to just a renderer or something smaller. 
+	But like as an example ShaderComp as well is a match too, lagShaderCompiler wasn't originally a "global" system however ShaderComp proves that its much more viable as one, thus on the next iteration of the design, we just make it static.
+*/
+class lagConstant {
+public:
+	virtual void UpdatePerFrame() = 0;
+private:
+};
+/* 
+The V-Table fucks with the values of the internal stuff, and thus also messes with the offset. 
+So just define it like a standard template type and it functions like a proxy anyways lmao
+*/
+template<typename T>
+class GameConst : public lagConstant{
+public:
+	GameConst() : m_Size(sizeof(T)){
+		Buffer = new char[sizeof(T)] {0};
+		D3D11_BUFFER_DESC Desc{};
+		Desc.ByteWidth = sizeof(T);
+		Desc.Usage = D3D11_USAGE_DYNAMIC;
+		Desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+		Desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+		pBuff = lagGraphics::CreateBuffer(&Desc, nullptr);
+	}
+	GameConst(const GameConst<T>&) = delete;
+	GameConst& operator=(const GameConst<T>&) = delete; // you shouldn't be able to "copy" a gpu resource. (or if you can, why would you lmao?)
+	GameConst& operator=(GameConst<T>&&) = delete; // moving a resource isn't really a thing. but you could theoretically write one if it needed to leave the one instance, but other than that not really that useful lmao. 
+	GameConst(GameConst<T>&&) = delete;
+	void UpdatePerFrame() {
+		void* v = lagGraphics::Map(pBuff, 0, D3D11_MAP_WRITE_DISCARD, 0);
+		memcpy(v, Buffer, m_Size);
+		lagGraphics::Unmap(pBuff, 0);
+	}
+	T* operator->() {
+		return (T*)Buffer; // i wonder if that would work  *fucking explodes*
+	}
+	T* As() {
+		assert(sizeof(T) == m_Size && "Sizes do not equal");
+		return (T*)Buffer;
+	}
+	lagBuffer* GetGPU() {
+		return this->pBuff;
+	}
+	~GameConst() {
+		delete Buffer;
+		if(pBuff) pBuff->Release();
+	}
+private:
+	char* Buffer = nullptr;
+	size_t m_Size;
+	lagBuffer* pBuff{};
+};
+class GameConstantBufferUpdate {
+public:
+	void RegisterBuffer(lagConstant* Buffer) {
+		Buffers.push_back(Buffer);
+	}
+	void UpdateAll() {
+		for (const auto& a : Buffers) {
+			a->UpdatePerFrame();
+		}
+	}
+private:
+	std::vector<lagConstant*> Buffers;
+};
+class CDoFancyShaderStuff {
+public:
+	struct alignas(16) CBuff{
+		DirectX::XMFLOAT2 Res;
+		float iTime;
+	};
+	CDoFancyShaderStuff() {
+		Target = lagGraphics::CreateRenderTarget(lagGraphics::GetBackBuffer());
+		lagGraphics::SetRenderTargets({Target}, nullptr);
+		lagByteCode vsPass = ShaderComp::Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\vs_full.hlsl", "VS");
+		D3D11_INPUT_ELEMENT_DESC Desc{};
+		Desc.Format = DXGI_FORMAT_R32G32B32_FLOAT;
+		Desc.SemanticName = "POSITION";
+		Desc.SemanticIndex = 0;
+		Desc.InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
+		Desc.InputSlot = 0;
+		Desc.AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT;
+		D3D11_INPUT_ELEMENT_DESC Desc2{};
+		Desc2.Format = DXGI_FORMAT_R32G32_FLOAT;
+		Desc2.SemanticName = "UVCOORD";
+		Desc2.SemanticIndex = 0;
+		Desc2.InputSlotClass = D3D11_INPUT_PER_VERTEX_DATA;
+		Desc2.InputSlot = 0;
+		Desc2.AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT;
+		ia = lagGraphics::CreateInputAssembler({Desc, Desc2}, vsPass.Byte);
+		lagVertexShader* Shader = lagGraphics::CreateVertexShader(vsPass.Byte);
+		lagGraphics::SetInputAssembler(ia);
+		lagGraphics::SetVertexShader(Shader);
+		unsigned int Stride = 5 * sizeof(float);
+		unsigned int Offset = 0;
+		Verts.Bind(&Stride, &Offset);
+		auto a = ShaderComp::Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\ps_full.hlsl", "PS", "ps_5_0");
+		lagFragmentShader* pShader = lagGraphics::CreateFragmentShader(a.Byte);
+		lagGraphics::SetFragmentShader(pShader);
+		lagGraphics::SetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		lagTexture2D* pTexture = (lagTexture2D*)lagGraphics::GetBackBuffer();
+		D3D11_TEXTURE2D_DESC textureDesc{};
+		pTexture->GetDesc(&textureDesc);
+		fTextureWidth = textureDesc.Width; fTextureHeight = (float)textureDesc.Height;
+		BufferUpdates.RegisterBuffer(&CBuffer);
+	}
+	void Process() {
+		float fClear[4]{0,0,0,1};
+		lagGraphics::ClearRenderTarget(Target, fClear);
+		CBuffer->Res = {fTextureWidth, fTextureHeight};
+		CBuffer->iTime = CTimer::GetTotalSeconds();
+		BufferUpdates.UpdateAll();
+		lagGraphics::SetFragmentShaderBuffers(0, {CBuffer.GetGPU()});
+		lagGraphics::Draw(6, 0);
+	}
+	~CDoFancyShaderStuff() {
+
+	}
+private:
+	GameConst<CBuff> CBuffer{};
+	GameConstantBufferUpdate BufferUpdates;
+	float fTextureWidth, fTextureHeight;
+	CQuadVertices Verts{};
+	lagInputAssembler* ia{nullptr};
+	lagRenderTarget* Target{nullptr};
 };
 
+class CImGui {
+public:
+	static void Init() {
+		IMGUI_CHECKVERSION();
+		ImGui::CreateContext();
+		ImGuiIO& io = ImGui::GetIO();
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_DockingEnable;
+		ImGui_ImplWin32_Init(CGameWindow::GetWindow()->GetHandle());
+		ImGui_ImplDX11_Init(lagGraphics::GetDeviceHandle(), lagGraphics::GetDeviceContext());
+	}
+	static void BeginFrame() {
+		ImGui_ImplDX11_NewFrame();
+		ImGui_ImplWin32_NewFrame();
+		ImGui::NewFrame();
+		m_IsGuiRunning = true;
+	}
+	static bool IsGuiActive() {
+		return m_IsGuiRunning;
+	}
+	static void EndFrame() {
+		m_IsGuiRunning = false;
+		ImGui::Render();
+		ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+	}
+	static void Destroy() {
+		ImGui_ImplDX11_Shutdown();
+		ImGui_ImplWin32_Shutdown();
+		ImGui::DestroyContext();
+	}
+private:
+	static inline bool m_IsGuiRunning = false;
+};
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
 	CTimer::Start();
 	CWinArgs args = CWinArgs{hInstance, hPrevInstance, pCmdLine, nCmdShow};
-	/* Anything past this point is APPLICATION specific. I.E it can vary how the applet wants to work. The framework can give them the CMD line stuff but whether or not they use it, up to them :)*/
-	CWindowClass Class{{LE_Process, L"lagGraphics", hInstance}};
-	const wchar_t* Name = {L"WindowName"};
-	WindowDescription Desc{};
-	Desc.WindowName = Name;
-	CWindow Window{&Class, Desc};
-	Window.Show();
+	CGameWindow::Init();
 	bool ShouldApplicationClose = false;
-	CRenderer::Init(Window.GetHandle());
+	lagGraphics::Init(CGameWindow::GetWindow()->GetHandle());
+	CImGui::Init();
+	auto* shdrpass = new CDoFancyShaderStuff();
+	lagGraphics::SetViewports({lagGraphics::GetClientViewport(CGameWindow::GetWindow()->GetHandle())}); // i hate viewports but they are kinda cool
 	while (!ShouldApplicationClose) {
-		//CTimer::Tick();
-		MSG m{};
-		if (Window.Peek(m)) {
-			TranslateMessage(&m);
-			DispatchMessage(&m);
-			if (m.message == WM_QUIT) {
-				ShouldApplicationClose = true;
-			}
-		}
-		CRenderer::Process();
+		CImGui::BeginFrame();
+		CTimer::Tick();
+		ShouldApplicationClose = CGameWindow::Update();
+		shdrpass->Process();
+		CImGui::EndFrame();
+		lagGraphics::Present(1, 0);
 	}
-	CRenderer::Destroy();
-
+	delete shdrpass; shdrpass = nullptr;
+	CImGui::Destroy();
+	lagGraphics::Shutdown();
+	CGameWindow::Destroy();
 	return 0;
 }
 #else

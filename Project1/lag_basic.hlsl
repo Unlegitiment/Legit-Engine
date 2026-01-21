@@ -11,26 +11,20 @@ struct VSOut
 };
 cbuffer LagMatrices : register(b0)
 {
-    matrix m_Projection;
-    matrix m_View;
-    matrix m_Model;
-
+    matrix m_Projection; // 
+    matrix m_View; // shifts universe to camera
+    matrix m_Model; // looks  
 };
 
 VSOut VS_Main(VSIn input)
 {
     VSOut output;
     float4 pos = float4(input.Pos, 1.0f);
-
     
-    matrix tm_Projection = transpose(m_Projection);
-    matrix tm_View = transpose(m_View);
-    matrix tm_Model = transpose(m_Model); // SLIGHTLY ineffecient. lmao.
-    
-
     float4 WorldPos = mul(pos, m_Model);
     float4 ViewPos = mul(WorldPos, m_View);
     float4 ProjectionPos = mul(ViewPos, m_Projection);
+    
     
     output.Pos = ProjectionPos;
     output.UV = input.UV;
@@ -84,6 +78,6 @@ PSOut PS_Main(VSOut In)
     for (int j = 0; j < 9; j++)
         col += sampleTex[j] * kernel[j];
     PSOut o;
-    o.Color = Texture.Sample(LinearClamp, In.UV);
+    o.Color = In.Pos;
     return o;
 }

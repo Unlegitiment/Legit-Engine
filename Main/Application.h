@@ -1082,7 +1082,7 @@ private:
 class CRenderer {
 public:
 	static CRenderer& Get() {
-		static CRenderer s_Renderer;
+		static CDefaultPass s_Renderer;
 		return s_Renderer;
 	}
 	void InitDeviceLayer() {
@@ -1190,7 +1190,7 @@ public:
 		Shutdown();
 	}
 	void Shutdown() {
-		CRenderer::Get().Shutdown();
+		CDefaultPass::Get().Shutdown();
 		delete m_Debug;
 		CLogger::Shutdown();
 	}
