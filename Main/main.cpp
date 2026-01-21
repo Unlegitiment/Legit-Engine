@@ -774,27 +774,42 @@ public:
 private:
 	static inline bool m_IsGuiRunning = false;
 };
-int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
-	CTimer::Start();
-	CWinArgs args = CWinArgs{hInstance, hPrevInstance, pCmdLine, nCmdShow};
-	CGameWindow::Init();
-	bool ShouldApplicationClose = false;
-	lagGraphics::Init(CGameWindow::GetWindow()->GetHandle());
-	CImGui::Init();
-	auto* shdrpass = new CDoFancyShaderStuff();
-	lagGraphics::SetViewports({lagGraphics::GetClientViewport(CGameWindow::GetWindow()->GetHandle())}); // i hate viewports but they are kinda cool
-	while (!ShouldApplicationClose) {
+class CApplication {
+public:
+	static void Init() {
+		CTimer::Start();
+		CGameWindow::Init();
+		lagGraphics::Init(CGameWindow::GetWindow()->GetHandle());
+		CImGui::Init();
+		ShaderPass = new CDoFancyShaderStuff();
+		lagGraphics::SetViewports({lagGraphics::GetClientViewport(CGameWindow::GetWindow()->GetHandle())}); // i hate viewports but they are kinda cool
+	}
+	static bool Update() {
 		CImGui::BeginFrame();
 		CTimer::Tick();
-		ShouldApplicationClose = CGameWindow::Update();
-		shdrpass->Process();
+		bool DoesWindowWantToClose = CGameWindow::Update();
+		ShaderPass->Process();
 		CImGui::EndFrame();
 		lagGraphics::Present(1, 0);
+		return DoesWindowWantToClose;
 	}
-	delete shdrpass; shdrpass = nullptr;
-	CImGui::Destroy();
-	lagGraphics::Shutdown();
-	CGameWindow::Destroy();
+	static void Shutdown() {
+		delete ShaderPass; ShaderPass = nullptr;
+		CImGui::Destroy();
+		lagGraphics::Shutdown();
+		CGameWindow::Destroy();
+	}
+private:
+	static inline CDoFancyShaderStuff* ShaderPass = nullptr;
+};
+
+int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
+	CWinArgs args = CWinArgs{hInstance, hPrevInstance, pCmdLine, nCmdShow};
+	CApplication::Init();
+	while (!CApplication::Update()) {
+
+	}
+	CApplication::Shutdown();
 	return 0;
 }
 #else
