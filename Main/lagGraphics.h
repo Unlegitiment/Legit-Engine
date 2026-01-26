@@ -5,27 +5,7 @@
 #pragma comment(lib,"d3d11.lib")
 #pragma comment(lib, "d3dcompiler.lib")
 #include <vector>
-struct lagByteCode {
-	std::vector<char> Byte;
-};
-class lagShaderCompiler {
-public:
-	lagByteCode Compile(const wchar_t* ShaderPath, const char* ShaderEntry, const char* ShaderVersion) {
-		ID3DBlob* pBlob, * pErr{};
-		HRESULT hr = D3DCompileFromFile(ShaderPath, NULL, NULL, ShaderEntry, ShaderVersion, 0, 0, &pBlob, &pErr);
-		if (FAILED(hr)) {
-			OutputDebugStringA((char*)pErr->GetBufferPointer());
-			OutputDebugStringA("\n");
-			__debugbreak();
-		}
-		lagByteCode c{};
-		c.Byte.resize(pBlob->GetBufferSize());
-		memcpy(c.Byte.data(), pBlob->GetBufferPointer(), sizeof(char) * pBlob->GetBufferSize());
-		return c;
-	}
-private:
 
-};
 using lagDeviceHandle = ID3D11Device;
 using lagDeviceContext = ID3D11DeviceContext;
 using lagSwapChain = IDXGISwapChain;
@@ -49,8 +29,29 @@ using lagInputAssembler = ID3D11InputLayout;
 using lagPrimitiveTopology = D3D11_PRIMITIVE_TOPOLOGY;
 using lagRasterizerState = ID3D11RasterizerState;
 
+#include <cstdio>
+using lagDebuggerOutputStringFunc = void(*)(const char*);
+class lagDebugger {
+public:
+	lagDebuggerOutputStringFunc m_Function = OutputDebugStringA;
+public:
+	lagDebugger() {
 
-class lagGraphics final {
+	}
+	template<typename... T> void Errorf(const char* fmt, T&&... args) {
+		size_t Offset = 14; // roughly equal to the sizeof(Format) - NullTerminator.
+		static constexpr int Size = 1028;
+		char buf[Size]{"[LAG::ERRORF] "};
+		sprintf_s((buf + Offset), Size-Offset, fmt, args...);
+		m_Function(buf);
+	}
+	~lagDebugger() {
+
+	}
+private:
+	
+};
+class lagGraphics  {
 public:
 	static D3D11_VIEWPORT GetClientViewport(HWND Window) {
 		D3D11_VIEWPORT Port{};
@@ -61,6 +62,16 @@ public:
 		Port.Width = rc.right - rc.left;
 		Port.Height = rc.bottom - rc.top;
 		return Port;
+	}
+public: /* Multi-stage initialization is cringe according to the standard guidelines, but at the same time, this is kinda valid here smh. */
+	static void SetDebuggerActive(lagDebugger* pDbg = nullptr) {
+		sm_pDebugger = pDbg ? pDbg : new lagDebugger();
+	}
+	static lagDebugger* GetDebugger() {
+		return sm_pDebugger;
+	}
+	static bool IsDebuggerActive() {
+		return sm_pDebugger != nullptr;
 	}
 public:
 	static void Init(HWND Window) {
@@ -99,11 +110,13 @@ public:
 		sm_pSwapChain->GetBuffer(0, IID_PPV_ARGS(&sm_pTexture));
 	}
 	static void Shutdown() {
+		delete sm_pDebugger;
 		sm_pTexture->Release();
 		sm_pDevice->Release();
 		sm_pDeviceContext->Release();
 		sm_pSwapChain->Release();
 	}
+public:
 	static lagDeviceContext* GetDeviceContext() {
 		return sm_pDeviceContext;
 	}
@@ -299,6 +312,7 @@ private:
 	lagGraphics(lagGraphics&&) = delete;
 	~lagGraphics() {}
 private:
+	static inline lagDebugger* sm_pDebugger = nullptr;
 	static inline lagVertexShader* sm_pCurrentVertexShader = nullptr;
 	static inline lagFragmentShader* sm_pCurrentFragmentShader = nullptr;
 	static inline lagHullShader* sm_pCurrentHullShader = nullptr;
@@ -313,4 +327,66 @@ private:
 	static inline lagDeviceHandle* sm_pDevice{nullptr};
 	static inline lagDeviceContext* sm_pDeviceContext{nullptr};
 	static inline lagSwapChain* sm_pSwapChain{nullptr};
+};
+
+
+template<typename T, typename OpResType = HRESULT>
+class lagResult {
+public:
+	lagResult(T RetVal, OpResType OperationReturn) : ReturnValue(RetVal), Operation(OperationReturn) {
+
+	}
+	bool HasFailed() {
+		if constexpr (sizeof(OpResType) == 4) { // If its equal to HRESULT, its kinda a poor way to do it, a better way would be a template specialization for HRESULT
+			return Operation != S_OK;
+		}
+		else {
+			return Operation.HasFailed();
+		}
+	}
+	OpResType GetOperationReturn() {
+		return this->Operation;
+	}
+	void SetReturnValue(T Result) {
+		this->ReturnValue = Result;
+	}
+	T GetReturn() {
+		return ReturnValue;
+	}
+private:
+	OpResType Operation;
+	T ReturnValue;
+};
+struct lagByteCode {
+	std::vector<char> Byte;
+};
+class lagShaderCompiler {
+public:
+	class CCompilerResult : public lagResult<ID3DBlob*> {
+		friend class lagShaderCompiler;
+	public:
+		CCompilerResult(ID3DBlob* Blob, HRESULT hr) : lagResult<ID3DBlob*>(Blob, hr) {
+
+		}
+		bool IsReturnError() const {
+			return IsReturnBlobErrorBlob;
+		}
+	private:
+		bool IsReturnBlobErrorBlob = false;
+	};
+	using Result = lagResult<lagByteCode, CCompilerResult>;
+	Result Compile(const wchar_t* ShaderPath, const char* ShaderEntry, const char* ShaderVersion) {
+		ID3DBlob* pBlob{}, * pErr{};
+		CCompilerResult Result = {pBlob, D3DCompileFromFile(ShaderPath, NULL, NULL, ShaderEntry, ShaderVersion, 0, 0, &pBlob, &pErr)};
+		if (pErr && Result.HasFailed()) {
+			Result.IsReturnBlobErrorBlob = true;
+			Result.SetReturnValue(pErr);
+			lagGraphics::GetDebugger()->Errorf("%s", (char*)pErr->GetBufferPointer());
+		}
+		lagByteCode c{};
+		c.Byte.resize(pBlob->GetBufferSize());
+		memcpy(c.Byte.data(), pBlob->GetBufferPointer(), sizeof(char) * pBlob->GetBufferSize());
+		lagResult<lagByteCode, CCompilerResult> Return{c,Result}; // does this copy it? lmao.
+		return Return;
+	}
 };

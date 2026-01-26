@@ -140,7 +140,6 @@ private:
 		for (long i = 0; i < ELF_MAX; i++) {
 			delete sm_Pipes[i];
 		}
-
 #endif // LE_WIN
 	}
 	static inline CLogFile* sm_File[ELF_MAX]{};

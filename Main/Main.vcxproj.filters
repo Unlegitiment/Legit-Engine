@@ -104,6 +104,9 @@
     <ClInclude Include="lagGraphics.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="DiscordApplication.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />

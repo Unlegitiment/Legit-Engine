@@ -218,7 +218,8 @@ public:
 		Data.pSysMem = quadVertices;
 		Buffer = lagGraphics::CreateBuffer(&m_Desc, &Data);
 		lagShaderCompiler Comp{};
-		lagByteCode Byte = Comp.Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\lag_basic.hlsl", "VS_Main", "vs_5_0");
+		
+		lagByteCode Byte = Comp.Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\lag_basic.hlsl", "VS_Main", "vs_5_0").GetReturn();
 		VSShader = lagGraphics::CreateVertexShader(Byte.Byte);
 		D3D11_INPUT_ELEMENT_DESC Desc{};
 		Desc.Format = DXGI_FORMAT_R32G32B32_FLOAT;
@@ -238,7 +239,7 @@ public:
 
 		InputAssembler = lagGraphics::CreateInputAssembler({Desc, Desc2}, Byte.Byte);
 
-		Byte = Comp.Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\lag_basic.hlsl", "PS_Main", "ps_5_0");
+		Byte = Comp.Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\lag_basic.hlsl", "PS_Main", "ps_5_0").GetReturn();
 		PSShader = lagGraphics::CreateFragmentShader(Byte.Byte);
 	}
 	DirectX::XMMATRIX GetMatrix() const {
@@ -328,7 +329,7 @@ public:
 		Data.pSysMem = Vertices;
 		Buffer = lagGraphics::CreateBuffer(&m_Desc, &Data);
 		lagShaderCompiler Comp{};
-		lagByteCode Byte = Comp.Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\lag_basic.hlsl", "VS_Main", "vs_5_0");
+		lagByteCode Byte = Comp.Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\lag_basic.hlsl", "VS_Main", "vs_5_0").GetReturn();
 		VSShader = lagGraphics::CreateVertexShader(Byte.Byte);
 
 		D3D11_INPUT_ELEMENT_DESC Desc{};
@@ -349,7 +350,7 @@ public:
 
 		InputAssembler = lagGraphics::CreateInputAssembler({Desc, Desc2}, Byte.Byte);
 
-		Byte = Comp.Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\lag_basic.hlsl", "PS_Main", "ps_5_0");
+		Byte = Comp.Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\lag_basic.hlsl", "PS_Main", "ps_5_0").GetReturn();
 		PSShader = lagGraphics::CreateFragmentShader(Byte.Byte);
 	}
 	DirectX::XMMATRIX GetMatrix() const {
@@ -469,7 +470,7 @@ struct LAGMatrices {
 	DirectX::XMMATRIX m_View;
 	DirectX::XMMATRIX m_Model;
 };
-class CDefaultPass{
+class CDefaultPass {
 public:
 	static void Init(HWND Window) {
 		sm_pRTV = lagGraphics::CreateRenderTarget(lagGraphics::GetBackBuffer());
@@ -483,11 +484,9 @@ public:
 		D3D11_DEPTH_STENCIL_DESC DSDesc{};
 		DSDesc.DepthEnable = true;
 		DSDesc.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL;
-		DSDesc.DepthFunc = D3D11_COMPARISON_LESS;
+		DSDesc.DepthFunc = D3D11_COMPARISON_GREATER;
 		sm_pDSS = lagGraphics::CreateDepthState(&DSDesc);
-
 		lagGraphics::SetDepthState(sm_pDSS, 0);
-		
 		float quadVertices[] = {
 			// positions       // flipped texCoords
 			-1.0f, -1.0f,0.0,      0.0f, 1.0f,
@@ -535,13 +534,13 @@ public:
 	}
 	template<typename T> static void RenderItem(LAGMatrices* Constants, T* item) {
 		Constants->m_Model = item->GetMatrix();
-
 		LAGMatrices* mats{nullptr};
 		mats = (LAGMatrices*)lagGraphics::Map(LAGConstants, 0, D3D11_MAP_WRITE_DISCARD, 0);
 		memcpy(mats, Constants, sizeof(LAGMatrices));
 		lagGraphics::Unmap(LAGConstants, 0);
-
 		lagGraphics::SetVertexShaderBuffers(0, {LAGConstants});
+
+
 		item->Draw();
 	}
 	static void Process() {
@@ -603,7 +602,14 @@ private:
 class ShaderComp : private lagShaderCompiler{
 private:
 	lagByteCode _Compile(const wchar_t* Path, const char* Entry, const char* Ver = "vs_5_0") {
-		return lagShaderCompiler::Compile(Path, Entry, Ver);
+		auto CompRes = lagShaderCompiler::Compile(Path, Entry, Ver);
+		
+		if (CompRes.HasFailed() && CompRes.GetOperationReturn().IsReturnError()) {
+			
+		}
+		else {
+			return CompRes.GetReturn();
+		}
 	}
 public:
 	static lagByteCode Compile(const wchar_t* Path, const char* Entry, const char* Ver = "vs_5_0") {
@@ -611,26 +617,84 @@ public:
 		return Comp._Compile(Path, Entry, Ver);
 	}
 };
-/* 
-	If theres one thing that I've learned is that you can make any abstraction "decent" just as long as the original is so primitive that its possible. 
-	Also that you get more of an idea of how things should be worked into things whether they should be global or not. (I primarily am talking about CGameWindow) 
-	CGameWindow is a perfect example, as its a item that is general to the application and wouldn't be reusable as a result, but also it uses an abstraction and as well is a global. 
-	If I eventually find that I don't actually need it, I can remove it and add it to just a renderer or something smaller. 
+enum class eBindStage {
+	CONSTANT_BUFFER = 0x4L,
+	VERTEX_BUFFER = 0x1L,
+	INDEX_BUFFER = 0x2L,
+	SHADER_RESOURCE = 0x8L,
+	STREAM_OUTPUT = 0x10L,
+	RENDER_TARGET = 0x20L,
+	DEPTH_STENCIL = 0x40L,
+	UNORDERED_ACCESS = 0x80L,
+	DECODER = 0x200L,
+	VIDEO_ENCODER = 0x400L,
+	MAX = 0x400L + 1
+};
+/*Right now the conversion technically works just because it maps perfectly to the D3D11 Type. But seriously don't consider it lmao.*/
+enum class eUsage {
+	DEFAULT,
+	IMMUTABLE,
+	DYNAMIC,
+	STAGING,
+	MAX_USAGE
+};
+class gpuConversion {
+public:
+	struct BindStage {
+		struct MappingType {
+			static D3D11_BIND_FLAG Get(eBindStage Stage) {
+
+			}
+		};
+	};
+};
+class gpuBuffer {
+public:
+	gpuBuffer(){
+		m_Buffer = nullptr;
+	}
+	gpuBuffer(size_t SizeOf, eBindStage BindStage, eUsage Usage, unsigned int CPUAccess) {
+		D3D11_BUFFER_DESC desc{};
+		desc.ByteWidth = SizeOf;
+		desc.Usage = (D3D11_USAGE)Usage; // it maps
+		desc.BindFlags = (D3D11_BIND_FLAG)BindStage; // maps
+		desc.CPUAccessFlags = CPUAccess;
+		m_Buffer = lagGraphics::CreateBuffer(&desc, nullptr);
+		if (m_Buffer == nullptr) {
+			std::cout << "gpuBuffer, Failed to Initialize Buffer Instance!";
+			__debugbreak();
+		}
+	}
+	lagBuffer* GetBuffer() {
+		return this->m_Buffer;
+	}
+	~gpuBuffer() {
+		if (m_Buffer) m_Buffer->Release();
+	}
+private:
+	lagBuffer* m_Buffer;
+};
+/*
+	If theres one thing that I've learned is that you can make any abstraction "decent" just as long as the original is so primitive that its possible.
+	Also that you get more of an idea of how things should be worked into things whether they should be global or not. (I primarily am talking about CGameWindow)
+	CGameWindow is a perfect example, as its a item that is general to the application and wouldn't be reusable as a result, but also it uses an abstraction and as well is a global.
+	If I eventually find that I don't actually need it, I can remove it and add it to just a renderer or something smaller.
 	But like as an example ShaderComp as well is a match too, lagShaderCompiler wasn't originally a "global" system however ShaderComp proves that its much more viable as one, thus on the next iteration of the design, we just make it static.
 */
-class lagConstant {
+class lagUpdatableResource {
 public:
-	virtual void UpdatePerFrame() = 0;
+	virtual void Update() = 0;
 private:
 };
 /* 
-The V-Table fucks with the values of the internal stuff, and thus also messes with the offset. 
-So just define it like a standard template type and it functions like a proxy anyways lmao
+	The V-Table fucks with the values of the internal stuff, and thus also messes with the offset. 
+	So just define it like a standard template type and it functions like a proxy anyways lmao
 */
+
 template<typename T>
-class GameConst : public lagConstant{
+class UpdatableBuffer : public lagUpdatableResource{
 public:
-	GameConst() : m_Size(sizeof(T)){
+	UpdatableBuffer() : m_Size(sizeof(T)){
 		Buffer = new char[sizeof(T)] {0};
 		D3D11_BUFFER_DESC Desc{};
 		Desc.ByteWidth = sizeof(T);
@@ -639,11 +703,11 @@ public:
 		Desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 		pBuff = lagGraphics::CreateBuffer(&Desc, nullptr);
 	}
-	GameConst(const GameConst<T>&) = delete;
-	GameConst& operator=(const GameConst<T>&) = delete; // you shouldn't be able to "copy" a gpu resource. (or if you can, why would you lmao?)
-	GameConst& operator=(GameConst<T>&&) = delete; // moving a resource isn't really a thing. but you could theoretically write one if it needed to leave the one instance, but other than that not really that useful lmao. 
-	GameConst(GameConst<T>&&) = delete;
-	void UpdatePerFrame() {
+	UpdatableBuffer(const UpdatableBuffer<T>&) = delete;
+	UpdatableBuffer& operator=(const UpdatableBuffer<T>&) = delete; // you shouldn't be able to "copy" a gpu resource. (or if you can, why would you lmao?)
+	UpdatableBuffer& operator=(UpdatableBuffer<T>&&) = delete; // moving a resource isn't really a thing. but you could theoretically write one if it needed to leave the one instance, but other than that not really that useful lmao. 
+	UpdatableBuffer(UpdatableBuffer<T>&&) = delete;
+	void Update() {
 		void* v = lagGraphics::Map(pBuff, 0, D3D11_MAP_WRITE_DISCARD, 0);
 		memcpy(v, Buffer, m_Size);
 		lagGraphics::Unmap(pBuff, 0);
@@ -658,7 +722,7 @@ public:
 	lagBuffer* GetGPU() {
 		return this->pBuff;
 	}
-	~GameConst() {
+	~UpdatableBuffer() {
 		delete Buffer;
 		if(pBuff) pBuff->Release();
 	}
@@ -666,19 +730,6 @@ private:
 	char* Buffer = nullptr;
 	size_t m_Size;
 	lagBuffer* pBuff{};
-};
-class GameConstantBufferUpdate {
-public:
-	void RegisterBuffer(lagConstant* Buffer) {
-		Buffers.push_back(Buffer);
-	}
-	void UpdateAll() {
-		for (const auto& a : Buffers) {
-			a->UpdatePerFrame();
-		}
-	}
-private:
-	std::vector<lagConstant*> Buffers;
 };
 class CDoFancyShaderStuff {
 public:
@@ -708,7 +759,7 @@ public:
 		lagVertexShader* Shader = lagGraphics::CreateVertexShader(vsPass.Byte);
 		lagGraphics::SetInputAssembler(ia);
 		lagGraphics::SetVertexShader(Shader);
-		unsigned int Stride = 5 * sizeof(float);
+		unsigned int Stride = 5 * sizeof(float); // offset based on Input Assembler
 		unsigned int Offset = 0;
 		Verts.Bind(&Stride, &Offset);
 		auto a = ShaderComp::Compile(L"E:\\A_Development\\Legit Engine\\Main\\Project1\\ps_full.hlsl", "PS", "ps_5_0");
@@ -719,14 +770,13 @@ public:
 		D3D11_TEXTURE2D_DESC textureDesc{};
 		pTexture->GetDesc(&textureDesc);
 		fTextureWidth = textureDesc.Width; fTextureHeight = (float)textureDesc.Height;
-		BufferUpdates.RegisterBuffer(&CBuffer);
 	}
 	void Process() {
 		float fClear[4]{0,0,0,1};
 		lagGraphics::ClearRenderTarget(Target, fClear);
 		CBuffer->Res = {fTextureWidth, fTextureHeight};
 		CBuffer->iTime = CTimer::GetTotalSeconds();
-		BufferUpdates.UpdateAll();
+		CBuffer.Update();
 		lagGraphics::SetFragmentShaderBuffers(0, {CBuffer.GetGPU()});
 		lagGraphics::Draw(6, 0);
 	}
@@ -734,8 +784,7 @@ public:
 
 	}
 private:
-	GameConst<CBuff> CBuffer{};
-	GameConstantBufferUpdate BufferUpdates;
+	UpdatableBuffer<CBuff> CBuffer{};
 	float fTextureWidth, fTextureHeight;
 	CQuadVertices Verts{};
 	lagInputAssembler* ia{nullptr};
@@ -774,19 +823,23 @@ public:
 private:
 	static inline bool m_IsGuiRunning = false;
 };
+#include "DiscordApplication.h"
 class CApplication {
 public:
 	static void Init() {
 		CTimer::Start();
 		CGameWindow::Init();
 		lagGraphics::Init(CGameWindow::GetWindow()->GetHandle());
+		lagGraphics::SetDebuggerActive();
 		CImGui::Init();
 		ShaderPass = new CDoFancyShaderStuff();
 		lagGraphics::SetViewports({lagGraphics::GetClientViewport(CGameWindow::GetWindow()->GetHandle())}); // i hate viewports but they are kinda cool
+		richDiscord::Init();
 	}
 	static bool Update() {
 		CImGui::BeginFrame();
 		CTimer::Tick();
+		richDiscord::Update();
 		bool DoesWindowWantToClose = CGameWindow::Update();
 		ShaderPass->Process();
 		CImGui::EndFrame();
@@ -794,6 +847,7 @@ public:
 		return DoesWindowWantToClose;
 	}
 	static void Shutdown() {
+		richDiscord::Shutdown();
 		delete ShaderPass; ShaderPass = nullptr;
 		CImGui::Destroy();
 		lagGraphics::Shutdown();
@@ -805,6 +859,9 @@ private:
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
 	CWinArgs args = CWinArgs{hInstance, hPrevInstance, pCmdLine, nCmdShow};
+
+
+
 	CApplication::Init();
 	while (!CApplication::Update()) {
 
