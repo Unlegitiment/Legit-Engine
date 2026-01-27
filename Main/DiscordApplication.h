@@ -5,11 +5,87 @@ using richDiscordOnReady = void(*)(discordpp::Client*);
 using richDiscordId = long long;
 #include <queue>
 using RichPresenceDebugCallback = void(*)(const char*);
+namespace legit {
+	class Debug {
+	public:
+		static void Init(const char* FileName) {
+			fopen_s(&pOutput, FileName, "w+");
+			if (!pOutput) {
+				// OS Fuckup!
+				__debugbreak(); // (I think what would be really cool is a Deferred Context. 
+				// So like IF the OS Fails we push it to a Engine Queue of Items as well as store a list of all the Debug outs upto that point so once the success is instanciated. We can finalize and it would be pretty cool.
+				// So instead of DebugBreak() it would be replaced with DeferredRuntime::AppendConditionCallback(conditionFunctor, handleFunctor);
+			}
+		}
+		template<typename... T>
+		static void Write(const char* fmt, T&&... t) {
+			if (!pOutput) return;
+			fprintf(pOutput, fmt, t...);
+		}
+		static void Shutdown() {
+			Write("[INFO][%s] End of Transmission.\n", __FUNCTION__);
+			fclose(pOutput);
+		}
+	private:
+		static inline FILE* pOutput = nullptr;
+	};
+
+	// PURPOSE - Allocates a buffer of size T on the heap. (DOES NOT CALL C_TOR)
+	template<typename T> constexpr T* MemoryAllocate() {
+		Debug::Write("[INFO][%s] Malloc Called on Type of Size: %llu\n", __FUNCTION__, sizeof(T));
+		return (T*)malloc(sizeof(T)); 
+	}
+	// PURPOSE - Memory Allocate, Does the same thing as the base, however allows specification of an amount. 
+	template<typename T> constexpr T* MemoryAllocate(unsigned long Amount) {
+		Debug::Write("[INFO][%s] Function called with Amount %lu Totalling Bytes Allocated: %d\n", __FUNCTION__, Amount, sizeof(T) * Amount);
+		return (T*)malloc(sizeof(T) * Amount);
+	}
+	template<typename T, typename... ConstructorArgs> constexpr T* New(ConstructorArgs&&... args) {
+		Debug::Write("[INFO][%s] Creating a new: %s\n", __FUNCTION__, typeid(T).name());
+		return new T( std::forward<ConstructorArgs>(args)... );
+	}
+	// PURPOSE - Deletes a dynamically allocated pointer's memory and sets the pointer to nullptr.
+	template<typename T> constexpr void Delete(T*& pMem) { 
+		Debug::Write("[INFO][%s] Deleting a %s at 0x%p\n", __FUNCTION__, typeid(T).name(), pMem);
+		delete pMem;
+		pMem = nullptr;
+	}
+	template<typename T> constexpr void Free(T*& pMem) {
+		Debug::Write("[INFO][%s] Freeing bytes of size %llu\n", __FUNCTION__, sizeof(T));
+		free( pMem ) ;
+		pMem = nullptr;
+	}
+}
+
+
+class richDebug {
+public:
+	richDebug() {
+
+	}
+	void SetFile(FILE* File) {
+		this->pFile = File;
+	}
+	template<typename... T>
+	void Write(const char* fmt, T&&... a) {
+		if (!pFile) return;
+		fprintf(pFile, fmt, a...);
+	}
+	~richDebug() {
+		if(pFile) fclose(pFile);
+	}
+private:
+	FILE* pFile = nullptr;
+};
 
 class richPresenceDebug {
 public:
 	static void Init(RichPresenceDebugCallback dbg = OutputDebugStringA) {
 		CB = dbg;
+		pDebug = legit::New<richDebug>();
+	}
+	static richDebug* GetWriter() {
+		return pDebug;
 	}
 	template<typename... T>
 	static void Printf(const char* fmt, T&&... args) {
@@ -17,10 +93,21 @@ public:
 		sprintf_s(buff, fmt, args...);
 		CB(buff);
 	}
+	template<typename... T> static void PrintLog(const char* fmt, T&&... args) {
+		if (!pDebug) {
+			Printf("[%s -> %s:::%d][WARNING]: richPresenceDebug was either never inited properly, or something is messing with the pDebug pointer. Please call richPresenceDebug::Init OR stop tampering with the memory of statics.\n", __FUNCTION__, __FILE__, __LINE__);
+			Printf(fmt, args...);
+		}
+		pDebug->Write(fmt, args...);
+	}
+	static void Destroy() {
+		legit::Delete(pDebug);
+	}
 private:
 	static inline RichPresenceDebugCallback CB = OutputDebugStringA;
+	static inline richDebug* pDebug = nullptr;
 };
-#define richPrintf(x, ...) richPresenceDebug::Printf("[INFO][%s] " x, __FUNCTION__, __VA_ARGS__);
+#define richPrintf(x, ...) richPresenceDebug::PrintLog("[INFO][%s] " x, __FUNCTION__, __VA_ARGS__);
 
 #define BIT(x) 1llu << x
 enum richDiscordScopeFlag : unsigned long long {
@@ -289,26 +376,34 @@ private:
 		HasClientBeenAuthorized = richDiscordAuth::Authorize(m_pClient, config);
 	}
 };
-#include <chrono>
+/* An example of what working in richDiscordClient looks like.*/
 class engineDiscordStatus {
 	static constexpr richDiscordId APPLICATION_ID = 1464925633649049794;
 public:
 	engineDiscordStatus() {
+		fopen_s(&pLogOut, "engineDiscordStatus.log", "w+");
+		richPresenceDebug::Init();
+		richPresenceDebug::GetWriter()->SetFile(pLogOut);
 		m_Stamp.SetStart(GetTime());
 		richDiscordConfig conf;
 		conf.ApplicationId = APPLICATION_ID;
 		conf.Scopes = richDiscordScopes::GetDefaultPresence();
-		m_pDiscordClient = new richDiscordClient(conf);
+		m_pDiscordClient = legit::New<richDiscordClient>(conf);
 		InitStrings();
 		TimeSinceLastUpdate = GetTime();
+
+		m_pDiscordClient->SetActivity(GetDef());
 	}
 	void Update() {
-
+		m_pDiscordClient->Run();
 	}
 	~engineDiscordStatus() {
-		delete m_pDiscordClient;
+		legit::Delete(m_pDiscordClient);
+		richPresenceDebug::Destroy();
+		pLogOut = nullptr;
 	}
 private:
+	FILE* pLogOut = nullptr;
 	unsigned long long GetTime() const {
 		return std::chrono::high_resolution_clock::now().time_since_epoch().count();
 	}
@@ -342,49 +437,29 @@ private:
 	std::string DetailsStringCurrent;
 	size_t m_Index;
 };
+#define USE_SAMPLE
 class richDiscord {
 public:
 	static void Init() {
-		richDiscordConfig config{};
-		config.ApplicationId = APPLICATION_ID;
-		config.Scopes = richDiscordScopes::GetDefaultPresence();
-		sm_pClient = new richDiscordClient(config);
-		sm_Status = new char[1028] {0};
+		legit::Debug::Init("LegitEngine.log");
+#ifdef USE_SAMPLE
+		UseSample();
+#endif
 	}
-	static discordpp::Activity GetEngineActivity() {
 
+	static void UseSample() {
+		if (sm_pEngineExample) return;
+		sm_pEngineExample = legit::New<engineDiscordStatus>();
 	}
-	static richDiscordClient* GetClient() {
-		return sm_pClient;
-	}
-	static inline std::vector<std::string> Participants{};
-	static inline bool IsThereAnActiveCall = false;
-	static bool IsClientActive() { return sm_pClient->IsClientReady(); }
 	static void Update() {
-		sm_pClient->Run();
-		if (IsClientActive() && ImGui::Begin("Discord Application")) {
-			if (ImGui::InputText("Discord Status", sm_Status, 1028)) {
-
-			}
-			if (sm_pClient->IsActivitySet() && ImGui::Button("Update Presence")) {
-				auto a = sm_pClient->GetActivity();
-				
-				a.SetDetails(sm_Status);
-				sm_pClient->SetActivity(a);
-			}
-			if (ImGui::Button("Start Presence")) {
-				sm_pClient->SetActivity(GetEngineActivity());
-			}
-			if (ImGui::Button("Clear Presence")) {
-				sm_pClient->ClearActivity();
-			}
-			ImGui::End();
+		if (sm_pEngineExample) {
+			sm_pEngineExample->Update();
 		}
 	}
 	static void Shutdown() {
-		delete sm_pClient;
+		legit::Delete(sm_pEngineExample);
+		legit::Debug::Shutdown();
 	}
 private:
-	static inline char* sm_Status = nullptr;
-	static inline richDiscordClient* sm_pClient = nullptr;
+	static inline engineDiscordStatus* sm_pEngineExample = nullptr;
 };
