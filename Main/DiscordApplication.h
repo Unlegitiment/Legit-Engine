@@ -5,57 +5,7 @@ using richDiscordOnReady = void(*)(discordpp::Client*);
 using richDiscordId = long long;
 #include <queue>
 using RichPresenceDebugCallback = void(*)(const char*);
-namespace legit {
-	class Debug {
-	public:
-		static void Init(const char* FileName) {
-			fopen_s(&pOutput, FileName, "w+");
-			if (!pOutput) {
-				// OS Fuckup!
-				__debugbreak(); // (I think what would be really cool is a Deferred Context. 
-				// So like IF the OS Fails we push it to a Engine Queue of Items as well as store a list of all the Debug outs upto that point so once the success is instanciated. We can finalize and it would be pretty cool.
-				// So instead of DebugBreak() it would be replaced with DeferredRuntime::AppendConditionCallback(conditionFunctor, handleFunctor);
-			}
-		}
-		template<typename... T>
-		static void Write(const char* fmt, T&&... t) {
-			if (!pOutput) return;
-			fprintf(pOutput, fmt, t...);
-		}
-		static void Shutdown() {
-			Write("[INFO][%s] End of Transmission.\n", __FUNCTION__);
-			fclose(pOutput);
-		}
-	private:
-		static inline FILE* pOutput = nullptr;
-	};
 
-	// PURPOSE - Allocates a buffer of size T on the heap. (DOES NOT CALL C_TOR)
-	template<typename T> constexpr T* MemoryAllocate() {
-		Debug::Write("[INFO][%s] Malloc Called on Type of Size: %llu\n", __FUNCTION__, sizeof(T));
-		return (T*)malloc(sizeof(T)); 
-	}
-	// PURPOSE - Memory Allocate, Does the same thing as the base, however allows specification of an amount. 
-	template<typename T> constexpr T* MemoryAllocate(unsigned long Amount) {
-		Debug::Write("[INFO][%s] Function called with Amount %lu Totalling Bytes Allocated: %d\n", __FUNCTION__, Amount, sizeof(T) * Amount);
-		return (T*)malloc(sizeof(T) * Amount);
-	}
-	template<typename T, typename... ConstructorArgs> constexpr T* New(ConstructorArgs&&... args) {
-		Debug::Write("[INFO][%s] Creating a new: %s\n", __FUNCTION__, typeid(T).name());
-		return new T( std::forward<ConstructorArgs>(args)... );
-	}
-	// PURPOSE - Deletes a dynamically allocated pointer's memory and sets the pointer to nullptr.
-	template<typename T> constexpr void Delete(T*& pMem) { 
-		Debug::Write("[INFO][%s] Deleting a %s at 0x%p\n", __FUNCTION__, typeid(T).name(), pMem);
-		delete pMem;
-		pMem = nullptr;
-	}
-	template<typename T> constexpr void Free(T*& pMem) {
-		Debug::Write("[INFO][%s] Freeing bytes of size %llu\n", __FUNCTION__, sizeof(T));
-		free( pMem ) ;
-		pMem = nullptr;
-	}
-}
 
 
 class richDebug {

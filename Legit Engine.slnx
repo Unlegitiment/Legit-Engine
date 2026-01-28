@@ -9,9 +9,11 @@
     <Project Path="LECore/LECore.vcxproj" Id="5965ca9f-bd30-4b87-b4aa-d6e92ee8c78b" />
     <Project Path="legitEngine/legitEngine.vcxproj" Id="3fdb3446-9e07-46a1-9fb5-2400a0d78539" />
     <Project Path="LEMath/LEMath.vcxproj" Id="a23a43ed-5524-482c-b17d-2f9a806e2480" />
+    <Project Path="LITemplates/LITemplates.vcxproj" Id="153698da-2ae2-418f-b56b-36a0197d74f6" />
     <Project Path="thirdparty/thirdparty.vcxproj" Id="f1e2146e-de29-4e09-9e63-96474d1abbcf" />
   </Folder>
   <Folder Name="/Tests/">
+    <Project Path="LIT Tests/LIT Tests.vcxproj" Id="6dfd1f90-539e-4637-9db2-0fc240af1568" />
     <Project Path="Main/Main.vcxproj" Id="ecf33edb-a025-4f05-a684-8b6fbadf331a" />
     <Project Path="Project1/Project1.vcxproj" Id="31bd9c68-2baa-4b7e-9859-df38e9aac13f" />
     <Project Path="simple_assimp/simple_assimp.vcxproj" Id="c4be5a8f-3de6-40e5-bc4c-0a980211b412" />
