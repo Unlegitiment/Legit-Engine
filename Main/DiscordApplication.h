@@ -4,6 +4,7 @@ using richDiscordLogCallback = void(*)(const char*);
 using richDiscordOnReady = void(*)(discordpp::Client*);
 using richDiscordId = long long;
 #include <queue>
+#include <LITemplates/alloc/Default.h>
 using RichPresenceDebugCallback = void(*)(const char*);
 
 

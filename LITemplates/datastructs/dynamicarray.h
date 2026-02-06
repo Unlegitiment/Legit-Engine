@@ -18,22 +18,29 @@ namespace legit {
 			this->m_Capacity = NewCapacity; // probably not bueno but its a small copy. 
 			Setup();
 		}
+		DynamicArray(Size NewCapacity, T&& move) {
+			leInfof(" Array instanciated with Capacity %d AND a Value.\n", NewCapacity);
+			this->m_Capacity = NewCapacity; // probably not bueno but its a small copy. 
+			Setup();
+			for (int i = 0; i < NewCapacity; i++) {
+				Allocator.Instanciate(m_pArray[i], std::move(move));
+			}
+		}
 		DynamicArray(const DynamicArray<T>& Copy) {
+			leInfof(" Copy constructor called.\n");
 			this->m_pArray = Allocator.Allocate(Copy.m_Capacity);
 			this->m_Size = Copy.m_Size;
 			this->m_Capacity = Copy.m_Capacity;
 			for (int i = 0; i < m_Size; i++) {
 				Allocator.Instanciate(this->m_pArray[i], Copy.m_pArray[i]);
 			}
-			leInfof(" Copy constructor called.\n");
 
 		}
 		DynamicArray(DynamicArray<T>&& Move) noexcept : m_pArray(Move.m_pArray), m_Size(Move.m_Size), m_Capacity(Move.m_Capacity) {
+			leInfof(" Movement constructor called.\n");
 			Move.m_pArray = nullptr;
 			Move.m_Size = 0;
 			Move.m_Capacity = 0;
-			leInfof(" Movement constructor called.\n");
-
 		}
 		void PushAndGrow(const T& copy) {
 			if (m_Size + 1 > m_Capacity) {
