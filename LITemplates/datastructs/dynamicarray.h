@@ -34,7 +34,6 @@ namespace legit {
 			for (int i = 0; i < m_Size; i++) {
 				Allocator.Instanciate(this->m_pArray[i], Copy.m_pArray[i]);
 			}
-
 		}
 		DynamicArray(DynamicArray<T>&& Move) noexcept : m_pArray(Move.m_pArray), m_Size(Move.m_Size), m_Capacity(Move.m_Capacity) {
 			leInfof(" Movement constructor called.\n");

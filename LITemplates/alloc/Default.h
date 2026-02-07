@@ -12,6 +12,10 @@ namespace legit {
 		leInfof(" Function called with Amount %lu Totalling Bytes Allocated: %d\n", Amount, sizeof(T) * Amount);
 		return (T*)malloc(sizeof(T) * Amount);
 	}
+	template<typename T> constexpr T* New() {
+		leInfof(" Creating a new: %s\n", typeid(T).name());
+		return new T();
+	}
 	template<typename T, typename... ConstructorArgs> constexpr T* New(ConstructorArgs&&... args) {
 		leInfof(" Creating a new: %s\n", typeid(T).name());
 		return new T(std::forward<ConstructorArgs>(args)...);
