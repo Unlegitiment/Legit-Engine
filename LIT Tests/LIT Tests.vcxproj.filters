@@ -18,5 +18,40 @@
     <ClCompile Include="LIT Tests.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="input\win\iobase.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="input\win\raw_input.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="input\ioGamepad.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="input\ioInput.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="input\win\xInput.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="input\ioGamepad.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="input\ioKeyboard.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="input\ioMouse.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="input\ioHandler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="input\win\iobase.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="input\win\raw_input.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

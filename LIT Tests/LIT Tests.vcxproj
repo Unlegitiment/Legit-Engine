@@ -128,7 +128,20 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="input\ioGamepad.cpp" />
+    <ClCompile Include="input\win\iobase.cpp" />
+    <ClCompile Include="input\win\raw_input.cpp" />
     <ClCompile Include="LIT Tests.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="input\ioGamepad.h" />
+    <ClInclude Include="input\ioHandler.h" />
+    <ClInclude Include="input\ioInput.h" />
+    <ClInclude Include="input\ioKeyboard.h" />
+    <ClInclude Include="input\ioMouse.h" />
+    <ClInclude Include="input\win\iobase.h" />
+    <ClInclude Include="input\win\raw_input.h" />
+    <ClInclude Include="input\win\xInput.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

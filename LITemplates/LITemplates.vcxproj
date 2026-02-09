@@ -28,6 +28,7 @@
     <ClInclude Include="debugging\litlogger.h" />
     <ClInclude Include="func\delegates.h" />
     <ClInclude Include="func\function.h" />
+    <ClInclude Include="memutil\ZeroBlock.h" />
     <ClInclude Include="pointers\Auto.h" />
     <ClInclude Include="types\vectortypes.h" />
     <ClInclude Include="types\words.h" />
