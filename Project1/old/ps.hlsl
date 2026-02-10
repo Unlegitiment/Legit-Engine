@@ -3,7 +3,7 @@ struct PSInput
     float4 Pos : SV_Position;
     float3 Col : COLOR0;
     float2 UV : UVCOORD0;
-};;
+};
 
 Texture2D m_Texture : register(t0); // BIND RESOURCE TO TEXTURE0
 SamplerState MeshTextureSampler : register(s0);

@@ -129,8 +129,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="input\ioGamepad.cpp" />
+    <ClCompile Include="input\ioHandler.cpp" />
+    <ClCompile Include="input\ioInput.cpp" />
+    <ClCompile Include="input\ioKeyboard.cpp" />
+    <ClCompile Include="input\ioMouse.cpp" />
     <ClCompile Include="input\win\iobase.cpp" />
     <ClCompile Include="input\win\raw_input.cpp" />
+    <ClCompile Include="input\win\xInput.cpp" />
     <ClCompile Include="LIT Tests.cpp" />
   </ItemGroup>
   <ItemGroup>

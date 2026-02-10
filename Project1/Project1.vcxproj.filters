@@ -15,9 +15,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="vs.hlsl" />
+    <FxCompile Include="old\vs.hlsl" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="ps.hlsl" />
+    <None Include="old\ps.hlsl" />
+    <None Include="simple_vert_shader.hlsl" />
   </ItemGroup>
 </Project>

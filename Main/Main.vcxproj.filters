@@ -18,12 +18,6 @@
     <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="WindowHandling\WindowsCmdArgs.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="WindowHandling\CWindow.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Application.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -54,17 +48,32 @@
     <ClCompile Include="stbi_import.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="input\win\iobase.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="input\win\raw_input.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="input\win\xInput.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="input\ioGamepad.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="input\ioHandler.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="input\ioInput.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="input\ioKeyboard.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="input\ioMouse.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="WindowHandling\CWindow.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="WindowHandling\WindowsCmdArgs.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="LIT_Start\ScopedPtr.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="Logger\GameLogger.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -105,6 +114,30 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DiscordApplication.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="input\win\iobase.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="input\win\raw_input.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="input\win\xInput.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="input\ioGamepad.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="input\ioHandler.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="input\ioInput.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="input\ioKeyboard.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="input\ioMouse.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

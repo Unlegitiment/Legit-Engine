@@ -129,6 +129,14 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Application.cpp" />
+    <ClCompile Include="input\ioGamepad.cpp" />
+    <ClCompile Include="input\ioHandler.cpp" />
+    <ClCompile Include="input\ioInput.cpp" />
+    <ClCompile Include="input\ioKeyboard.cpp" />
+    <ClCompile Include="input\ioMouse.cpp" />
+    <ClCompile Include="input\win\iobase.cpp" />
+    <ClCompile Include="input\win\raw_input.cpp" />
+    <ClCompile Include="input\win\xInput.cpp" />
     <ClCompile Include="Logger\GameLogger.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="stbi_import.cpp" />
@@ -139,8 +147,6 @@
     <ClCompile Include="thirdparty\imgui-dock\imgui_draw.cpp" />
     <ClCompile Include="thirdparty\imgui-dock\imgui_tables.cpp" />
     <ClCompile Include="thirdparty\imgui-dock\imgui_widgets.cpp" />
-    <ClCompile Include="WindowHandling\CWindow.cpp" />
-    <ClCompile Include="WindowHandling\WindowsCmdArgs.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Discord\Discord.vcxproj">
@@ -153,8 +159,15 @@
   <ItemGroup>
     <ClInclude Include="DiscordApplication.h" />
     <ClInclude Include="Exception\exception.h" />
+    <ClInclude Include="input\ioGamepad.h" />
+    <ClInclude Include="input\ioHandler.h" />
+    <ClInclude Include="input\ioInput.h" />
+    <ClInclude Include="input\ioKeyboard.h" />
+    <ClInclude Include="input\ioMouse.h" />
+    <ClInclude Include="input\win\iobase.h" />
+    <ClInclude Include="input\win\raw_input.h" />
+    <ClInclude Include="input\win\xInput.h" />
     <ClInclude Include="lagGraphics.h" />
-    <ClInclude Include="LIT_Start\ScopedPtr.h" />
     <ClInclude Include="Logger\GameLogger.h" />
     <ClInclude Include="stbi_import.h" />
     <ClInclude Include="stb_image.h" />
@@ -166,8 +179,6 @@
     <ClInclude Include="thirdparty\imgui-dock\imstb_rectpack.h" />
     <ClInclude Include="thirdparty\imgui-dock\imstb_textedit.h" />
     <ClInclude Include="thirdparty\imgui-dock\imstb_truetype.h" />
-    <ClInclude Include="WindowHandling\CWindow.h" />
-    <ClInclude Include="WindowHandling\WindowsCmdArgs.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
