@@ -1,274 +1,187 @@
-#include <iostream>
-#include <LITemplates/func/delegates.h>
-#include <LITemplates/pointers/Auto.h>
-#include <LITemplates/types/vectortypes.h>
-#include <LITemplates/datastructs/dynamicarray.h>
-#include <Windows.h>
-#include <windowsx.h>
-#include <LIT Tests/input/ioInput.h>
-void bufPrintf(const char* buff) {
-	printf("%s", buff);
-}
-static void InitLegit() {
-	legit::LITLogger::OutputToFunction(bufPrintf);
-}
-class SampleObject {
-public:
-	SampleObject() {
-		printf("[SAMPLEOBJECT] Creating Object Default Initialization\n");
-	}
-	SampleObject(int operation) {
-		printf("[SAMPLEOBJECT] Creating Object Integer Constructor\n");
-		this->Value = operation;
-	}
-	SampleObject(const SampleObject& copy) {
-		printf("[SAMPLEOBJECT] Copying Object using Copy Constructor\n");
-		this->Value = copy.Value;
-	}
-	SampleObject& operator=(const SampleObject& copy) {
-		printf("[SAMPLEOBJECT] Copying Object using Copy Equals\n");
-		this->Value = copy.Value;
-		return *this;
-	}
-	SampleObject(SampleObject&& move) noexcept {
-		printf("[SAMPLEOBJECT] Moving Object using Move Constructor\n");
-		this->Value = move.Value;
-		move.Value = 0;
-	}
-	SampleObject& operator=(SampleObject&& move) noexcept {
-		printf("[SAMPLEOBJECT] Moving object using Move Equals\n");
-		this->Value = move.Value;
-		move.Value = 0;
-		return *this;
-	}
-	~SampleObject() {
-		printf("[SAMPLEOBJECT] Deleting Object\n");
-	}
-	bool operator==(const SampleObject& o) {
-		if (o.Value == Value) return true;
-		return false;
-	}
-	int Value{};
-};
-
-
+#include <stdio.h>
+#include <stdlib.h>
+#include <LITemplates/alloc/Default.h>
+/*
+	This part below is what I hate about WS2. Weird headers.
+*/
+#include <WinSock2.h>
+#include <WS2tcpip.h>
+#include <string>
+#pragma comment (lib, "WS2_32")
 namespace legit {
-	template<typename T> class Castable {
+	class litFormat {
 	public:
-		Castable(T* pointer) {
-			this->Pointer = pointer;
+		template<typename...T>
+		litFormat(const char* fmt, T&&... args) {
+			snprintf(m_Buff, sizeof(m_Buff), fmt, args...);
+			m_StringSize = strnlen_s(m_Buff, 1028);
 		}
-		template<typename K>
-		K GetAs() {
-			return (K)(this->Pointer);
+		unsigned long long GetStringSize() const {
+			return this->m_StringSize;
 		}
-		T* GetPointer() {
-			return this->Pointer;
+		const char* GetBuffer() const {
+			return this->m_Buff;
+		}
+		operator const char* () {
+			return this->m_Buff;
 		}
 	private:
-		T* Pointer;
+		unsigned long long m_StringSize = 0ll;
+		char m_Buff[1028]; // could be a templated object btw!
 	};
 }
-class CSystem {
-public:
-	static legit::Castable<void> GetInstance() {
-		return GetModuleHandle(NULL);
-	}
-	static legit::Castable<void> GetCurrentKeyboardLayout() {
-		return GetKeyboardLayout(0);
-	}
-private:
-};
-class ApplicationWindowProcessor {
-	struct sWindowInformation {
-		bool IsCloseRequested;
-		bool IsQuitRequested;
-		bool WasWindowJustCreated;
-		unsigned long WindowWidth, WindowHeight;
+namespace legit {
+	/*
+		Purpose: Basic TCP Connection via WSA. A Simple Demo to go along with a standard option.
+	*/
+	class wsaLock {
+	public:
+		wsaLock(WORD Version, LPWSADATA data) {
+			ErrorCode = WSAStartup(Version, data);
+		}
+		int GetError() const {
+			return this->ErrorCode;
+		}
+		~wsaLock() {
+			printf(__FUNCTION__"\n");
+			WSACleanup();
+		}
+	private:
+		int ErrorCode = 0;
 	};
-public:
-	static constexpr char IGNORE_RESPONSE = 0;
-	static void Init() {
-		/*
-			This would leak because statics aren't uninitialized until after the program closes. (still doesn't explain the 16 bytes of difference I had but whatever. ) 
-		*/
-		pProc = new std::vector<WNDPROC>{};
-	}
-	static void AddWindowProc(WNDPROC proc) {
-		pProc->emplace_back(proc);
-	}
-	static void Shutdown() {
-		delete pProc;
-	}
-	static void Update() {
-		MSG pMsg{};
-		while (PeekMessage(&pMsg, NULL, 0, 0, PM_REMOVE)) {
-			TranslateMessage(&pMsg);
-			DispatchMessageW(&pMsg);
-			if (pMsg.message == WM_QUIT) {
-				WindowInfo.IsQuitRequested = true;
+	class netAddrInfo {
+	public:
+		using AddressT = addrinfo;
+		netAddrInfo(const char* IP, const char* Port, const AddressT* pHints) {
+			m_Error = GetAddrInfoA(IP, Port, pHints, &m_pResult);
+		}
+		netAddrInfo(const netAddrInfo&) = delete;
+		netAddrInfo& operator=(const netAddrInfo&) = delete;
+		netAddrInfo(netAddrInfo&& other) noexcept : m_pResult(other.m_pResult) {
+			other.m_pResult = nullptr;
+		}
+		netAddrInfo& operator=(netAddrInfo&& other) noexcept {
+			this->m_pResult = (other.m_pResult);
+			other.m_pResult = nullptr;
+			return *this;
+		}
+		int GetError() const {
+			return m_Error;
+		}
+		bool Succeeded() const {
+			return m_Error == 0;
+		}
+		AddressT* GetResult() const {
+			return m_pResult;
+		}
+		~netAddrInfo() {
+			printf(__FUNCTION__"\n");
+			if (m_pResult)
+				FreeAddrInfoA(m_pResult);
+		}
+	private:
+		int m_Error = 0;
+		AddressT* m_pResult;
+	};
+	class netSocket {
+	public:
+		using SocketT = SOCKET;
+		netSocket(const netAddrInfo& addr) {
+			m_NameLen = addr.GetResult()->ai_addrlen;
+			memcpy(&m_pName, addr.GetResult()->ai_addr, m_NameLen);
+			m_Socket = socket(addr.GetResult()->ai_family, addr.GetResult()->ai_socktype, addr.GetResult()->ai_protocol);
+		}
+		netSocket(const netSocket&) = delete;
+		netSocket& operator=(const netSocket&) = delete;
+		SocketT GetSocket() const {
+			return this->m_Socket;
+		}
+		operator SocketT() {
+			return this->m_Socket;
+		}
+		int Connect() const {
+			return connect(this->m_Socket, reinterpret_cast<const sockaddr*>(&this->m_pName), this->m_NameLen);
+		}
+		int Send(const void* Data, unsigned long long Size, int flags = 0) const {
+			return send(this->m_Socket, (const char*)Data, Size, flags);
+		}
+		~netSocket() {
+			printf(__FUNCTION__"\n");
+			closesocket(m_Socket);
+		}
+	private:
+		sockaddr_storage m_pName; // Resolved. ( just didn't know about the storage type!
+		int m_NameLen;
+		SocketT m_Socket;
+	};
+	static constexpr const char* LOCALHOST = "127.0.0.1";
+	class netLoggerClient {
+	public:
+		netLoggerClient(const char* IP, const char* Port): m_pSocket(netAddrInfo(IP, Port, &m_Hints)){
+			if (m_pSocket == INVALID_SOCKET) {
+				return;
+			}
+			iResult = m_pSocket.Connect();
+			while (iResult < 0) {
+				iResult = m_pSocket.Connect();
+			}
+			if (m_pSocket == INVALID_SOCKET) {
+				return;
 			}
 		}
-	}
-	static LRESULT CALLBACK MainWindowProc(HWND wnd, UINT m, WPARAM wParam, LPARAM lParam) {
-		switch (m) {
-			case WM_NCCREATE:
-				WindowInfo.WasWindowJustCreated = true;
-				break;
-			case WM_CREATE:
-				{
-					CREATESTRUCT* pStruct = (CREATESTRUCT*)lParam;
-					WindowInfo.WindowHeight = pStruct->cy;
-					WindowInfo.WindowWidth = pStruct->cx;
-					WindowInfo.WasWindowJustCreated = false;
-					break;
-				}
-			case WM_CLOSE:
-				WindowInfo.IsCloseRequested = true;
-				break;
-			case WM_SIZE:
-				UINT width = LOWORD(lParam);
-				UINT height = HIWORD(lParam);
-				WindowInfo.WindowWidth = width;
-				WindowInfo.WindowHeight = height;
-				break;
-		}
-		for (const auto& a : *pProc) {
-			LRESULT result = a(wnd, m, wParam, lParam);
+		void Send(const litFormat& fmt) {
+			int total = 0;
+			int size = fmt.GetStringSize();
 
-			if (result != IGNORE_RESPONSE)
-				return result;
-		}
-		return DefWindowProc(wnd, m, wParam, lParam);
-	}
-	static sWindowInformation& Get() {
-		return WindowInfo;
-	}
-private:
-	static inline sWindowInformation WindowInfo{};
-	static inline std::vector<WNDPROC>* pProc;
-};
-#include <array>
-namespace legit {
-	namespace EnumUtil {
-		template<typename T, typename Enum> static constexpr auto Underly(Enum&& e) {
-			return (T)e;
-		}
-	}
-}
-
-namespace legit {
-	constexpr unsigned char MAX_BYTE = 0xff;
-	constexpr unsigned char MAX_SBYTE = 0x7f;
-
-	constexpr unsigned short MAX_USHORT = 0xFFFF;
-	constexpr signed short MAX_SHORT = 0x7FFF;
-
-	constexpr signed long MAX_LONG = 0x7FFFFFFF;
-	constexpr unsigned long MAX_ULONG = 0xFFFFFFFF;
-
-	constexpr unsigned long long MAX_ULLONG = 0xFFFFFFFFFFFFFFFF;
-	constexpr signed long long MAX_LLONG = 0x7FFFFFFFFFFFFFFF;
-}
-
-
-#include <algorithm>
-namespace legit {
-	template<typename T> const T& Clamp(const T& Value, const T& Minimum, const T& Maximum) {
-		return std::clamp(Value, Minimum, Maximum);
-	}
-	template<typename T> const T& Abs(const T& Value) {
-		return std::abs(Value);
-	}
-}
-class CAppl {
-public:
-	static void Init() {
-		ApplicationWindowProcessor::Init();
-		const wchar_t CLASS_NAME[] = L"WindowClass";
-		WNDCLASS wc = { };
-		wc.lpfnWndProc = ApplicationWindowProcessor::MainWindowProc;
-		wc.hInstance = CSystem::GetInstance().GetAs<HINSTANCE>();
-		wc.lpszClassName = CLASS_NAME;
-		ATOM res = RegisterClassW(&wc);
-		if (!res) {
-			printf("Window Register Class failed, %d\n", GetLastError());
-			__debugbreak();
-		}
-		Window = CreateWindowEx(
-			0,                              // Optional window styles.
-			CLASS_NAME,                     // Window class
-			L"Learn to Program Windows",    // Window text
-			WS_OVERLAPPEDWINDOW,            // Window style
-
-			// Size and position
-			CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
-
-			NULL,       // Parent window    
-			NULL,       // Menu
-			CSystem::GetInstance().GetAs<HINSTANCE>(),  // Instance handle
-			NULL        // Additional application data
-		);
-		if (Window == NULL) {
-			printf("Failed to create window %d\n", GetLastError());
-			__debugbreak();
-			return;
-		}
-		ShowWindow((HWND)Window, SW_SHOW);
-		legit::ioInput::Init(ApplicationWindowProcessor::AddWindowProc);
-	}
-	static void Update() {
-		while (!ApplicationWindowProcessor::Get().IsCloseRequested) {
-			auto i = legit::ioInput::GetGamePad().GetPressureValueNorm(legit::ioGamePadPressureInputs::RT);
-			if (i != 0.0000f) {
-				float f = i * (float)legit::MAX_USHORT;
-				printf("Pressure down %f VibOut: %f\n", i, f);
-				legit::ioInput::GetGamePad().Vibrate((short)f);
-			} else if (legit::ioInput::GetKeyboard().IsDown(legit::ioKey::A)) {
-				legit::ioInput::GetGamePad().Vibrate(legit::MAX_USHORT);
+			while (total < size) {
+				int sent = m_pSocket.Send(fmt.GetBuffer() + total, size - total);
+				if (sent == SOCKET_ERROR)
+					return;
+				total += sent;
 			}
-			else {
-				legit::ioInput::GetGamePad().Vibrate(0);
-			}
-			ApplicationWindowProcessor::Update();
-			legit::ioInput::Update(ApplicationWindowProcessor::Get().WindowWidth, ApplicationWindowProcessor::Get().WindowHeight);
 		}
-	}
-	static void Shutdown() {
-		legit::ioInput::Shutdown();
-		CloseWindow((HWND)Window);
-		Window = nullptr;
-		ApplicationWindowProcessor::Shutdown();
-	}
-private:
-	static inline void* Window = nullptr;
-};
-
-class Entry {
-public:
-	static int Main(int, char**) {
-		CAppl::Init();
-		CAppl::Update();
-		CAppl::Shutdown();
-		return 0;
-	}
-};
-
-
-
-
-
-
-
-
-
-
-
-
-
-#define ENTRY(func) namespace legit{ struct ProgramEntry{ static inline int(*Entry)(int, char**) = func;};}
-ENTRY(Entry::Main);
-int main(int argc, char** argv) {
-	return legit::ProgramEntry::Entry(argc, argv);
+	private:
+		static addrinfo TCPHints() {
+			addrinfo hints;
+			ZeroMemory(&hints, sizeof(hints));
+			hints.ai_family = AF_INET; // ipv4 or ipv6. Both function in a similar manner however. 
+			hints.ai_socktype = SOCK_STREAM; // TCP Or UDP.
+			hints.ai_protocol = IPPROTO_TCP; // variant. TCP Or UDP. Dependant on both AF_INET and Sock_Stream || Sock_UGRAM.
+			return hints;
+		}
+		addrinfo m_Hints = TCPHints();
+		int iResult = 0l;
+		netSocket m_pSocket;
+	};
+	class netLogger {
+	public:
+		static void Init(wsaLock* pLock) { 
+			// this might not be relevent here. wsa is apart of WINDOW's initialization procedure. 
+			// thus its kinda useless here. the only thing that WOULD make it worth it is being able to check against potentially a global for is WSA is initted (specifically inside of the netSocket or netAddrInfo)
+			// but even then, it will just hard fail anyways soooooo.
+			m_Lock = pLock;
+			m_Client = new netLoggerClient(LOCALHOST, "27015");
+		}
+		static void Update() {
+			litFormat Str{"Hello! %f\n", 0.01f};
+			Send(Str); // Test!
+		}
+		static void Send(const litFormat& String) {
+			m_Client->Send(String);
+		}
+		static void Shutdown() {
+			delete m_Client;
+		}
+	private:
+		static inline netLoggerClient* m_Client;
+		static inline wsaLock* m_Lock = 0;
+	};
 }
-
+using namespace legit;
+int main() {
+	WSADATA Data{};
+	wsaLock WindowsSecurity{MAKEWORD(2,2), &Data};
+	netLogger::Init(&WindowsSecurity);
+	netLogger::Update();
+	netLogger::Shutdown();
+}

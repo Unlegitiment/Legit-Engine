@@ -21,8 +21,8 @@
   <PropertyGroup Label="Globals">
     <VCProjectVersion>18.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
-    <ProjectGuid>{ecf33edb-a025-4f05-a684-8b6fbadf331a}</ProjectGuid>
-    <RootNamespace>Main</RootNamespace>
+    <ProjectGuid>{f9d025bd-e118-45e1-9599-b31462985467}</ProjectGuid>
+    <RootNamespace>NoMain</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -104,12 +104,15 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpp17</LanguageStandard>
-      <AdditionalIncludeDirectories>$(ProjectDir)..\;E:\A_Development\Legit Engine\Main\Main\thirdparty\imgui-dock;E:\A_Development\Legit Engine\Main\Main\thirdparty\imgui-dock\backends;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EntryPointSymbol>_start</EntryPointSymbol>
+      <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -128,71 +131,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Application.cpp" />
-    <ClCompile Include="input\ioGamepad.cpp" />
-    <ClCompile Include="input\ioHandler.cpp" />
-    <ClCompile Include="input\ioInput.cpp" />
-    <ClCompile Include="input\ioKeyboard.cpp" />
-    <ClCompile Include="input\ioMouse.cpp" />
-    <ClCompile Include="input\win\iobase.cpp" />
-    <ClCompile Include="input\win\raw_input.cpp" />
-    <ClCompile Include="input\win\xInput.cpp" />
-    <ClCompile Include="Logger\GameLogger.cpp" />
-    <ClCompile Include="main.cpp" />
-    <ClCompile Include="stbi_import.cpp" />
-    <ClCompile Include="thirdparty\imgui-dock\backends\imgui_impl_dx11.cpp" />
-    <ClCompile Include="thirdparty\imgui-dock\backends\imgui_impl_win32.cpp" />
-    <ClCompile Include="thirdparty\imgui-dock\imgui.cpp" />
-    <ClCompile Include="thirdparty\imgui-dock\imgui_demo.cpp" />
-    <ClCompile Include="thirdparty\imgui-dock\imgui_draw.cpp" />
-    <ClCompile Include="thirdparty\imgui-dock\imgui_tables.cpp" />
-    <ClCompile Include="thirdparty\imgui-dock\imgui_widgets.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\Discord\Discord.vcxproj">
-      <Project>{2918c4e1-d240-4695-aec9-1826a4112fb6}</Project>
-    </ProjectReference>
-    <ProjectReference Include="..\LECore\LECore.vcxproj">
-      <Project>{5965ca9f-bd30-4b87-b4aa-d6e92ee8c78b}</Project>
-    </ProjectReference>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="DiscordApplication.h" />
-    <ClInclude Include="Exception\exception.h" />
-    <ClInclude Include="input\ioGamepad.h" />
-    <ClInclude Include="input\ioHandler.h" />
-    <ClInclude Include="input\ioInput.h" />
-    <ClInclude Include="input\ioKeyboard.h" />
-    <ClInclude Include="input\ioMouse.h" />
-    <ClInclude Include="input\win\iobase.h" />
-    <ClInclude Include="input\win\raw_input.h" />
-    <ClInclude Include="input\win\xInput.h" />
-    <ClInclude Include="lagGraphics.h" />
-    <ClInclude Include="Logger\GameLogger.h" />
-    <ClInclude Include="stbi_import.h" />
-    <ClInclude Include="stb_image.h" />
-    <ClInclude Include="thirdparty\imgui-dock\backends\imgui_impl_dx11.h" />
-    <ClInclude Include="thirdparty\imgui-dock\backends\imgui_impl_win32.h" />
-    <ClInclude Include="thirdparty\imgui-dock\imconfig.h" />
-    <ClInclude Include="thirdparty\imgui-dock\imgui.h" />
-    <ClInclude Include="thirdparty\imgui-dock\imgui_internal.h" />
-    <ClInclude Include="thirdparty\imgui-dock\imstb_rectpack.h" />
-    <ClInclude Include="thirdparty\imgui-dock\imstb_textedit.h" />
-    <ClInclude Include="thirdparty\imgui-dock\imstb_truetype.h" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="packages.config" />
+    <ClCompile Include="NoMain.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
-    <Import Project="..\packages\Assimp.redist.3.0.0\build\native\Assimp.redist.targets" Condition="Exists('..\packages\Assimp.redist.3.0.0\build\native\Assimp.redist.targets')" />
-    <Import Project="..\packages\Assimp.3.0.0\build\native\Assimp.targets" Condition="Exists('..\packages\Assimp.3.0.0\build\native\Assimp.targets')" />
   </ImportGroup>
-  <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
-    <PropertyGroup>
-      <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
-    </PropertyGroup>
-    <Error Condition="!Exists('..\packages\Assimp.redist.3.0.0\build\native\Assimp.redist.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Assimp.redist.3.0.0\build\native\Assimp.redist.targets'))" />
-    <Error Condition="!Exists('..\packages\Assimp.3.0.0\build\native\Assimp.targets')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Assimp.3.0.0\build\native\Assimp.targets'))" />
-  </Target>
 </Project>

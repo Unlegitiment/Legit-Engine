@@ -1,32 +1,14 @@
 #pragma once
 #include <LITemplates\debugging\litlogger.h>
 #include <LITemplates\alloc\Default.h>
+#include <memory>
 namespace legit {
-	template<typename T> class AutoPtr {
-	public:
-		AutoPtr(const AutoPtr<T>&) = delete;
-		AutoPtr<T>& operator=(const AutoPtr<T>&) = delete;
-		AutoPtr(T&& AllocationCall) { // we know we are in a Steal position
-			Data = AllocationCall;
-			AllocationCall = nullptr;
-			leInfof(" AutoPtr now handling 0x%p\n", Data);
-		}
-		AutoPtr(AutoPtr<T>&& move) {
-			this->Data = move.Data;
-			move.Data = nullptr;
-			leInfof(" Movement of AutoPtr\n");
-		}
-		T Get() {
-			return Data;
-		}
-		template<typename... Args> static constexpr AutoPtr<T> Make(Args&&... args) {
-			return legit::New<T>(args...);
-		}
-		~AutoPtr() {
-			leInfof(" Deleting AutoPtr\n");
-			legit::Delete(Data);
-		}
-	private:
-		T Data{nullptr};
-	};
-}
+	template<typename T> using OwnerPtr = std::unique_ptr<T>;
+	template<typename T, typename... TArgs> OwnerPtr<T> CreateOwnerPtr(TArgs... args) {
+		return std::make_unique<T>(args...);
+	}
+	template<typename T> using AutoPtr = std::shared_ptr<T>;
+	template<typename T, typename... TArgs> AutoPtr<T> CreateAutoPtr(TArgs... args) {
+		return std::make_shared<T>(args...);
+	}
+};

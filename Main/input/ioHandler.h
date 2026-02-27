@@ -20,7 +20,7 @@ namespace legit {
 		static legit::ioGamePad::RumbleValue* GetControllerRumbleLeftMotor(legit::ioGamePad* pPad);
 
 		static inline legit::ioGamePad::RumbleValue LastReportedMotorLValue = 0;
-		static inline legit::ioGamePad::RumbleValue LastReportedMotorRValue = 0;
+		static inline legit::ioGamePad::RumbleValue LastReportedMotorRValue = 0; 
 	private:
 
 	};

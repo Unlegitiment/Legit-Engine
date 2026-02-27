@@ -1,4 +1,8 @@
 #include "stb_image.h"
+#define NOMINMAX
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
 #include <LECore/headers/platform_specs.h>
 #include "input/ioInput.h"
 #include <LITemplates/alloc/Default.h>
@@ -7,6 +11,8 @@ using namespace legit;
 #include <Windows.h>
 #include "lagGraphics.h"
 #include <ctime>
+#include <unordered_map>
+#include <LITemplates/pointers/Auto.h>
 class CWindowCore {
 public:
 	struct sWindowInformation {
@@ -204,26 +210,154 @@ private:
 	unsigned int NumberOfVertices = 0;
 	unsigned int NumberOfIndices = 0;
 };
-class ShaderEffect {
+class buffer {
 public:
+	static lagBuffer* CreateBuffer(D3D11_USAGE Usage, D3D11_BIND_FLAG BindFlags, size_t ByteStride, const void* Data) {
+		D3D11_BUFFER_DESC Desc{};
+		Desc.ByteWidth = ByteStride;
+		Desc.Usage = Usage;
+		Desc.BindFlags = BindFlags;
+		D3D11_SUBRESOURCE_DATA mData{};
+		mData.pSysMem = Data;
+		return lagGraphics::CreateBuffer(&Desc, &mData);
+	}
+	static lagBuffer* CreateBuffer(D3D11_USAGE Usage, D3D11_BIND_FLAG BindFlags, size_t ByteStride, D3D11_CPU_ACCESS_FLAG cpuaccess,  const void* Data) {
+		D3D11_BUFFER_DESC Desc{};
+		Desc.ByteWidth = ByteStride;
+		Desc.Usage = Usage;
+		Desc.BindFlags = BindFlags;
+		Desc.CPUAccessFlags = cpuaccess;
+		D3D11_SUBRESOURCE_DATA mData{};
+		mData.pSysMem = Data;
+		return lagGraphics::CreateBuffer(&Desc, &mData);
+	}
 private:
 
 };
-class CRenderer {
-public:
-	static void Pixel(ID3DBlob* pPSBlob) {
-		std::vector<char> m_Byte{};
-		m_Byte.resize(pPSBlob->GetBufferSize());
-		memcpy(m_Byte.data(), pPSBlob->GetBufferPointer(), pPSBlob->GetBufferSize());
-		sm_pFragmentShader = lagGraphics::CreateFragmentShader(m_Byte);
+namespace legit {
+	template<typename T, typename R> constexpr T StaticCast(R Object) {
+		return static_cast<T>(Object);
 	}
-	static std::vector<char> Vertex(ID3DBlob* pVSBlob) {
+	template<typename T, typename R> constexpr T* ReinterpretCast(R* Object) {
+		return reinterpret_cast<T*>(Object);
+	}
+}
+template<typename T>
+class lagMapSegment {
+public:
+	lagMapSegment(lagBuffer* Buffer) {
+		m_pFetchedPointer = legit::StaticCast<T*>(lagGraphics::Map(Buffer, 0, D3D11_MAP_WRITE_DISCARD, 0));
+		this->m_Buffer = Buffer;
+	}
+	T* operator->() { return m_pFetchedPointer; }
+	T& operator*() { return *m_pFetchedPointer; }
+	T* Get() {
+		return this->m_pFetchedPointer;
+	}
+	~lagMapSegment() {
+		lagGraphics::Unmap(m_Buffer, 0);
+		m_pFetchedPointer = nullptr;
+	}
+private:
+	T* m_pFetchedPointer = nullptr;
+	lagBuffer* m_Buffer = nullptr;
+};
+template<typename T>
+class lagBufferUpdate {
+public:
+	lagBufferUpdate(lagBuffer* gpuBuf) : m_Buffer(gpuBuf){}
+	lagBuffer* Buffer() {
+		return this->m_Buffer;
+	}
+	void Update(const T& CopyValues) {
+		lagMapSegment<T> seg = (m_Buffer);
+		*seg = CopyValues;
+	}
+	~lagBufferUpdate() {}
+private:
+	lagBuffer* m_Buffer;
+};
+
+class BlinnPhongEffect {
+public:
+	BlinnPhongEffect(InputElements& m_Elements, ID3DBlob& pVSBlob, ID3DBlob& pPSBlob) {
+		FragmentShader(pPSBlob);
+		auto res = Vertex(pVSBlob);
+		m_InputAssembler = lagGraphics::CreateInputAssembler(m_Elements.GetDescr(), res);
+		m_VTConsts.push_back(buffer::CreateBuffer(D3D11_USAGE_DYNAMIC, D3D11_BIND_CONSTANT_BUFFER, sizeof(LagMatrices), D3D11_CPU_ACCESS_WRITE, &DefaultMatrices));
+		m_FSConsts.push_back(buffer::CreateBuffer(D3D11_USAGE_DYNAMIC, D3D11_BIND_CONSTANT_BUFFER, sizeof(LagColorLighting), D3D11_CPU_ACCESS_WRITE, &LightingBuffer));
+	}
+	void Draw(CMesh* pMesh) {
+		lagGraphics::SetInputAssembler(m_InputAssembler);
+		lagGraphics::SetVertexShader(m_pVertexShader);
+		lagGraphics::SetFragmentShader(m_pFragmentShader);
+		UpdateSubresource();
+		lagGraphics::SetVertexShaderBuffers(0, m_VTConsts); // vertex shader. 
+		lagGraphics::SetFragmentShaderBuffers(0, m_FSConsts); // frag
+		pMesh->Draw();
+	}
+	static inline DirectX::XMVECTOR VIEWPOS = {2,2,-3};
+private:
+	void UpdateSubresource() {
+		lagBufferUpdate<LagMatrices> mats{this->m_VTConsts[0]};
+		LagMatrices mat{};
+		mat.m_Model = DirectX::XMMatrixTranspose(DirectX::XMMatrixIdentity());
+		mat.m_Projection = DirectX::XMMatrixTranspose(DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(90.f), 16.0 / 9.0, 0.01f, 100));
+		mat.m_View = DirectX::XMMatrixTranspose(DirectX::XMMatrixLookAtLH(VIEWPOS, {0,0,0}, {0,1,0}));
+		mats.Update(mat);
+		lagBufferUpdate<LagColorLighting> Lighting{this->m_FSConsts[0]};
+		LagColorLighting LightingParams{};
+		LightingParams.m_ObjectColor[0] = 1.0;
+		LightingParams.m_ObjectColor[1] = 0.5f;
+		LightingParams.m_ObjectColor[2] = 0.31f;
+		LightingParams.m_ObjectColor[3] = 1;
+		LightingParams.m_LightColor[0] = 1;
+		LightingParams.m_LightColor[1] = 1;
+		LightingParams.m_LightColor[2] = 1;
+		LightingParams.m_LightColor[3] = 1;
+		LightingParams.m_LightPosition[0] = 2;
+		LightingParams.m_LightPosition[1] = 2;
+		LightingParams.m_LightPosition[2] = -2;
+		LightingParams.m_LightPosition[3] = 0;
+		LightingParams.m_ViewPosition[0] = VIEWPOS.m128_f32[0];
+		LightingParams.m_ViewPosition[1] = VIEWPOS.m128_f32[1];
+		LightingParams.m_ViewPosition[2] = VIEWPOS.m128_f32[2];
+		LightingParams.m_ViewPosition[3] = VIEWPOS.m128_f32[3]; 
+		Lighting.Update(LightingParams);
+	}
+	void FragmentShader(ID3DBlob& pPSBlob) {
 		std::vector<char> m_Byte{};
-		m_Byte.resize(pVSBlob->GetBufferSize());
-		memcpy(m_Byte.data(), pVSBlob->GetBufferPointer(), pVSBlob->GetBufferSize());
-		sm_pVertexShader = lagGraphics::CreateVertexShader(m_Byte);
+		m_Byte.resize(pPSBlob.GetBufferSize());
+		memcpy(m_Byte.data(), pPSBlob.GetBufferPointer(), pPSBlob.GetBufferSize());
+		m_pFragmentShader = lagGraphics::CreateFragmentShader(m_Byte);
+	}
+	std::vector<char> Vertex(ID3DBlob& pVSBlob) {
+		std::vector<char> m_Byte{};
+		m_Byte.resize(pVSBlob.GetBufferSize());
+		memcpy(m_Byte.data(), pVSBlob.GetBufferPointer(), pVSBlob.GetBufferSize());
+		m_pVertexShader = lagGraphics::CreateVertexShader(m_Byte);
 		return m_Byte;
 	}
+	struct LagMatrices {
+		DirectX::XMMATRIX m_Projection; // 
+		DirectX::XMMATRIX m_View; // shifts universe to camera
+		DirectX::XMMATRIX m_Model; // looks  
+	} DefaultMatrices{};
+	struct alignas(16) LagColorLighting {
+		float m_ObjectColor[4];
+		float m_LightColor[4];
+		float m_LightPosition[4];
+		float m_ViewPosition[4];
+	} LightingBuffer{};
+	std::vector<lagBuffer*> m_VTConsts{}; 
+	std::vector<lagBuffer*> m_FSConsts{};
+	lagInputAssembler* m_InputAssembler{nullptr};
+	lagVertexShader* m_pVertexShader{nullptr};
+	lagFragmentShader* m_pFragmentShader{nullptr};
+};
+
+class RenderPassMesh {
+public:
 	static void Shaders() {
 		const wchar_t* Path = L"E:\\A_Development\\Legit Engine\\Main\\Project1\\simple_vert_shader.hlsl";
 		ID3DBlob* pVSBlob = nullptr, * pPSBlob = nullptr, * pErr = nullptr;
@@ -232,115 +366,76 @@ public:
 			printf("Shader Compiler Failed: %s", (char*)pErr->GetBufferPointer());
 			__debugbreak();
 		}
-		res = D3DCompileFromFile(Path, nullptr, nullptr, "PS_MainQuad", "ps_5_0", 0, 0, &pPSBlob, &pErr);
+		res = D3DCompileFromFile(Path, nullptr, nullptr, "PS_PhongBasic", "ps_5_0", 0, 0, &pPSBlob, &pErr);
 		if (FAILED(res)) {
 			printf("Shader Compiler Failed: %s", (char*)pErr->GetBufferPointer());
 			__debugbreak();
 		}
-		auto vert = Vertex(pVSBlob);
-		InputAssembler(sm_pMesh->GetElements(), vert); // it just needs the byte code, BUT this is only needed for the actual Creation of the Object on the GPU.
-		Pixel(pPSBlob);
-
+		sm_pEffect = new BlinnPhongEffect(sm_pMesh->GetInput(), *pVSBlob, *pPSBlob);
 	}
 	/*
 		This part is not really tied to the Shader, You can create the definitions whereever. But the problem arises when you want to do more than this lmao.
 		I think that this is the hard part with D3D11, is that the line is often blurred as to like how operations are used in tandem.
 	*/
-	static std::vector<D3D11_INPUT_ELEMENT_DESC> Descs() {
-		std::vector<D3D11_INPUT_ELEMENT_DESC> m_Desc{};
-		D3D11_INPUT_ELEMENT_DESC desc1{};
-		desc1.AlignedByteOffset = D3D11_APPEND_ALIGNED_ELEMENT;
-		desc1.Format = DXGI_FORMAT_R32G32B32_FLOAT;
-		desc1.SemanticIndex = 0;
-		desc1.SemanticName = "POSITION";
-		m_Desc.push_back(desc1);
-		desc1.SemanticName = "TEXCOORD";
-		desc1.Format = DXGI_FORMAT_R32G32_FLOAT;
-		m_Desc.push_back(desc1);
-		return m_Desc;
-	}
-	static void InputAssembler(std::vector<D3D11_INPUT_ELEMENT_DESC> Assemblies, std::vector<char>& VSBlob) {
-		sm_pAssembler = lagGraphics::CreateInputAssembler(Assemblies, VSBlob);
-	}
-	static void Init(HWND window) {
+	static void Init() {
 		/*
 			A lot of big stuff is removed by the context of this call. I'd consider a new approach to Initializing the procedure or introducing a middle-man between the two layers.
 		*/
-		lagGraphics::Init(window);
 		sm_pRenderTarget = lagGraphics::CreateRenderTarget(lagGraphics::GetBackBuffer());
 		lagGraphics::SetRenderTargets({sm_pRenderTarget}, nullptr);
 		std::vector<float> Vert{};
-		Vert.resize(18);
-		memcpy(Vert.data(), quadVertices, sizeof(float) * 18);
-		sm_pMesh = new CMesh(Vert, {}, {});
+		Assimp::Importer Importer{};
+		std::vector<int> Indices{};
+		const aiScene* scene = Importer.ReadFile("E:\\A_Development\\Legit Engine\\Main\\Main\\assets_\\cube.obj", aiProcess_Triangulate | aiProcess_GenNormals);
+		for (int i = 0; i < scene->mNumMeshes; i++) {
+			auto* mesh = scene->mMeshes[i];
+			for (int j = 0; j < mesh->mNumVertices; j++) {
+				Vert.emplace_back(mesh->mVertices[j].x);
+				Vert.emplace_back(mesh->mVertices[j].y);
+				Vert.emplace_back(mesh->mVertices[j].z);
+				Vert.emplace_back(mesh->mNormals[j].x);
+				Vert.emplace_back(mesh->mNormals[j].y);
+				Vert.emplace_back(mesh->mNormals[j].z);
+			}
+			for (int j = 0; j < mesh->mNumFaces; j++) {
+				aiFace& face = mesh->mFaces[j];
+				if (face.mNumIndices != 3) {
+					printf("Wrong Num of Indices per-face. Geometry is likely fucked!\n");
+				}
+				Indices.push_back(face.mIndices[0]);
+				Indices.push_back(face.mIndices[1]);
+				Indices.push_back(face.mIndices[2]);
+			}
+		}
+		Importer.FreeScene();
+		sm_pMesh = new CMesh(Vert, Indices, {});
 		sm_pMesh->GetInput().AddElement("POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, sizeof(float) * 3);
-		//sm_pMesh->GetInput().AddElement("TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, sizeof(float) * 2);
+		sm_pMesh->GetInput().AddElement("NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, sizeof(float) * 3);
 		Shaders();
-		D3D11_BUFFER_DESC desc{};
-		desc.Usage = D3D11_USAGE_DYNAMIC;
-		desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-		desc.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-		desc.ByteWidth = sizeof LagMatrices;
-		D3D11_SUBRESOURCE_DATA Data{};
-		Data.pSysMem = &DefaultMatrices;
-		sm_pBuffers.push_back(lagGraphics::CreateBuffer(&desc, &Data));
 		D3D11_RASTERIZER_DESC RasterDesc{};
-		RasterDesc.CullMode = D3D11_CULL_NONE;
+		RasterDesc.CullMode = D3D11_CULL_BACK;
 		RasterDesc.FillMode = D3D11_FILL_SOLID;
 		RasterDesc.DepthClipEnable = 1;
 		sm_pRasterstate = lagGraphics::CreateRasterizationState(&RasterDesc);
-
 	}
-	struct LagMatrices {
-		DirectX::XMMATRIX m_Projection; // 
-		DirectX::XMMATRIX m_View; // shifts universe to camera
-		DirectX::XMMATRIX m_Model; // looks  
-	} static inline DefaultMatrices{};
 	static inline lagRasterizerState* sm_pRasterstate{nullptr};
 	static inline std::vector<lagBuffer*> sm_pBuffers{};
 	static void Render() {
-		float fColor[4] = {0.25,0,0,1};
+		float fColor[4] = {0,0,0,1};
 		lagGraphics::ClearRenderTarget(sm_pRenderTarget, fColor);
-		lagGraphics::SetInputAssembler(sm_pAssembler);
-		lagGraphics::SetVertexShader(sm_pVertexShader);
-		lagGraphics::SetFragmentShader(sm_pFragmentShader);
 		lagGraphics::SetRasterizerState(sm_pRasterstate);
-
-
 		D3D11_VIEWPORT port{};
 		port.Width = CWindowCore::sm_pWindowMessage->WindowWidth;
 		port.Height = CWindowCore::sm_pWindowMessage->WindowHeight;
 		lagGraphics::SetViewports({port});
-		
-		auto* ret = (LagMatrices*)lagGraphics::Map(sm_pBuffers[0], 0, D3D11_MAP_WRITE_DISCARD, 0);
-		LagMatrices mat{};
-		mat.m_Model = DirectX::XMMatrixTranspose(DirectX::XMMatrixIdentity());
-		mat.m_Projection = DirectX::XMMatrixTranspose(DirectX::XMMatrixPerspectiveFovLH(DirectX::XMConvertToRadians(90.f), 16.0 / 9.0, 0.01f, 100));
-		mat.m_View = DirectX::XMMatrixTranspose(DirectX::XMMatrixLookAtLH({2,0,-3}, {0,0,0}, {0,1,0}));
-		memcpy(ret, &mat, sizeof(LagMatrices));
-		lagGraphics::Unmap(sm_pBuffers[0], 0);
-		lagGraphics::SetVertexShaderBuffers(0, sm_pBuffers); // vertex shader. 
-		sm_pMesh->Draw();
-		lagGraphics::Present(1, 0);
+		sm_pEffect->Draw(sm_pMesh);
 	}
 	static void Shutdown() {
-		lagGraphics::Shutdown();
+
 	}
 private:
-	static inline lagVertexShader* sm_pVertexShader{nullptr};
-	static inline lagFragmentShader* sm_pFragmentShader{nullptr};
-	static inline lagInputAssembler* sm_pAssembler{nullptr};
+	static inline BlinnPhongEffect* sm_pEffect{nullptr};
 	static inline CMesh* sm_pMesh{nullptr};
-
-	static constexpr const float quadVertices[18/*30*/] = {
-		// positions       // flipped texCoords
-		-1.0f, -1.0f,0,      //0.0f, 1.0f,
-		-1.0f,  1.0f,0,      //0.0f, 0.0f,
-		 1.0f, -1.0f,0,      //1.0f, 1.0f,
-		-1.0f,  1.0f,0,      //0.0f, 0.0f,
-		 1.0f,  1.0f,0,      //1.0f, 0.0f,
-		 1.0f, -1.0f,0,      //1.0f, 1.0f
-	};
 	static inline lagRenderTarget* sm_pRenderTarget = nullptr;
 };
 class CApplication {
@@ -348,7 +443,8 @@ public:
 	static void Init() {
 		CWindowMain::Init();
 		legit::ioInput::Init(CWindowMain::AddToWindowsHandler);
-		CRenderer::Init(CWindowMain::GetWindow());
+		lagGraphics::Init(CWindowMain::GetWindow());
+		RenderPassMesh::Init();
 	}
 	static bool Update() {
 		while (!sm_bCanClose) {
@@ -356,12 +452,14 @@ public:
 			if (CWindowMain::sm_pWindowMessage->IsCloseRequested && CWindowMain::sm_pWindowMessage->IsQuitRequested) {
 				sm_bCanClose = true;
 			}
-			CRenderer::Render();
+			RenderPassMesh::Render();
+			lagGraphics::Present(1, 0);
 		}
 		return true;
 	}
 	static void Shutdown() {
-		CRenderer::Shutdown();
+		RenderPassMesh::Shutdown();
+		lagGraphics::Shutdown();
 		legit::ioInput::Shutdown();
 		CWindowMain::Shutdown();
 	}
@@ -371,7 +469,7 @@ private:
 };
 
 
-int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
+int main(int argc, char** argv) {
 	CApplication::Init();
 	while (!CApplication::Update()) {
 

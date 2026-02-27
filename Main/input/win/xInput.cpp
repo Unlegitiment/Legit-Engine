@@ -48,7 +48,7 @@ void XInput::Vibrate(int UserIndex, ioGamePad& ioGamePad) {
 	XInputSetState(UserIndex, &vib);
 
 	ioHandler::LastReportedMotorLValue = *lmotor;
-	ioHandler::LastReportedMotorRValue = *rmotor;
+	ioHandler::LastReportedMotorRValue = *rmotor; 
 }
 
 void XInput::Vibrate(int Index, unsigned short LeftMotor, unsigned short RightMotor) {

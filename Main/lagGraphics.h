@@ -11,7 +11,7 @@ namespace legit {
 	using lagDeviceContext = ID3D11DeviceContext;
 	using lagSwapChain = IDXGISwapChain;
 	using lagResource = ID3D11Resource;
-
+	using lagUnknown = IUnknown;
 	using lagVertexShader = ID3D11VertexShader;
 	using lagFragmentShader = ID3D11PixelShader;
 	using lagDomainShader = ID3D11DomainShader;
@@ -112,10 +112,10 @@ namespace legit {
 		}
 		static void Shutdown() {
 			legit::Delete(sm_pDebugger);
-			sm_pTexture->Release();
-			sm_pDevice->Release();
-			sm_pDeviceContext->Release();
-			sm_pSwapChain->Release();
+			if(sm_pTexture) sm_pTexture->Release();
+			if (sm_pDevice) sm_pDevice->Release();
+			if (sm_pDeviceContext) sm_pDeviceContext->Release();
+			if (sm_pSwapChain) sm_pSwapChain->Release();
 		}
 	public:
 		static lagDeviceContext* GetDeviceContext() {
@@ -146,6 +146,7 @@ namespace legit {
 			lagBuffer* Buffer{nullptr};
 			HRESULT hr = sm_pDevice->CreateBuffer(pBuffer, pData, &Buffer);
 			if (FAILED(hr)) {
+				printf("CreateBuffer Failed: %d\n", GetLastError());
 				return nullptr;
 			}
 			return Buffer;
@@ -157,6 +158,9 @@ namespace legit {
 				return nullptr;
 			}
 			return pRet;
+		}
+		static lagDeviceHandle* GetDevice() {
+			return sm_pDevice;
 		}
 		static lagVertexShader* CreateVertexShader(std::vector<char>& ByteCode, ID3D11ClassLinkage* Linkage = nullptr) {
 			lagVertexShader* pVer{};
@@ -218,7 +222,11 @@ namespace legit {
 		}
 		static void* Map(lagResource* Resource, UINT Subresource, D3D11_MAP MapType, UINT MapFlags) {
 			D3D11_MAPPED_SUBRESOURCE Data{};
-			sm_pDeviceContext->Map(Resource, Subresource, MapType, MapFlags, &Data);
+			HRESULT hr = sm_pDeviceContext->Map(Resource, Subresource, MapType, MapFlags, &Data);
+			if (FAILED(hr)) {
+				printf("Failed to map: %d", GetLastError());
+				return nullptr;
+			}
 			return Data.pData;
 		}
 		static void Unmap(lagResource* Resource, UINT subresource) {
