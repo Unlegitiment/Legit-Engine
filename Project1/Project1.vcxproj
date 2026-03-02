@@ -130,6 +130,7 @@
     <FxCompile Include="old\vs.hlsl">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
     </FxCompile>
+    <FxCompile Include="lag_basic.hlsl" />
     <None Include="simple_vert_shader.hlsl">
       <FileType>Document</FileType>
     </None>

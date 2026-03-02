@@ -16,6 +16,7 @@
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="old\vs.hlsl" />
+    <FxCompile Include="lag_basic.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <None Include="old\ps.hlsl" />
