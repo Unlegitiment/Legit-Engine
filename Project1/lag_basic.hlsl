@@ -25,14 +25,14 @@ VSOut BasicTranslate(VSInput vs)
 }
 VSOut BasicTranslate3D(VSInput3D ia)
 {
+    VSOut output;
     float4 pos = float4(ia.Position, 1.0);
+
     float4 WorldPos = mul(pos, m_Model);
     float4 ViewPos = mul(WorldPos, m_View);
-    float4 ProjectionPos = mul(ViewPos, m_Projection);
-    
-    VSOut output;
-    output.Pos = ProjectionPos;
-    
+    float4 ClipPos = mul(ViewPos, m_Projection); // ← this line was missing
+
+    output.Pos = ClipPos;
     return output;
 }
 
@@ -46,5 +46,5 @@ VSOut vs_main3d(VSInput3D Input)
 }
 float4 ps_main(VSOut vs) : SV_Target0
 {
-    return float4(0.4, 0, 0, 1); // fuck.
+    return float4(0, 0.4, 0, 1); // fuck.
 }

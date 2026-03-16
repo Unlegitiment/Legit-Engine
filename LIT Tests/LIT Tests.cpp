@@ -4,6 +4,7 @@
 /*
 	This part below is what I hate about WS2. Weird headers.
 */
+#define NOMINMAX
 #include <WinSock2.h>
 #include <WS2tcpip.h>
 #include <string>
@@ -196,7 +197,7 @@ namespace legit {
 	};
 	class netException {
 	public:
-		netException(const char* Exception) : m_Message(Exception){
+		netException(const char* Exception) : m_Message(Exception) {
 
 		}
 		const char* Message() {
@@ -260,6 +261,8 @@ namespace dx {
 #include <dxgi.h>
 #include <d3dcompiler.h>
 }
+#include <vector>
+
 #pragma comment(lib,"d3d11.lib")
 #pragma comment(lib, "d3dcompiler.lib")
 void CreateWinClass(WNDPROC proc) {
@@ -368,16 +371,290 @@ dx::ID3D11Buffer* CreateQuadVertices(dx::ID3D11Device* Device) {
 	}
 	return Buffer;
 }
+class lagVertexShader {
+public:
+	lagVertexShader(dx::ID3D11Device* Device, const char* ByteCode, unsigned long long ByteCodeSize) {
+		Device->CreateVertexShader(ByteCode, ByteCodeSize, nullptr, &m_VertexShader);
+	}
+	lagVertexShader(const lagVertexShader& copy) {
+		this->m_ByteCode = copy.m_ByteCode;
+		this->ByteSize = copy.ByteSize;
+		this->m_VertexShader = copy.m_VertexShader;
+	}
+	~lagVertexShader() {
+		m_VertexShader->Release();
+	}
+private:
+	char* m_ByteCode{nullptr};
+	unsigned long long ByteSize{};
+	dx::ID3D11VertexShader* m_VertexShader{};
+};
+namespace legit {
+	using u8 = unsigned char;
+	using u16 = unsigned short;
+	using u32 = unsigned long;
+	using u64 = unsigned long long;
+	using s8 = signed char;
+	using s16 = signed short;
+	using s32 = signed long;
+	using s64 = signed long long;
+}
+
+class lagGeometry {
+public:
+	dx::DirectX::XMMATRIX World{};
+	lagGeometry() = default;
+	lagGeometry(dx::ID3D11Device* pDevice, float* Floats, legit::u64 VSize, legit::u32* Indices, legit::u64 ISize, legit::u32 Stride) : m_Stride(Stride), m_IndexCount(ISize), m_VertexCount(VSize / Stride) {
+		//Vertex
+		dx::D3D11_BUFFER_DESC VDesc{};
+		VDesc.BindFlags = dx::D3D11_BIND_FLAG::D3D11_BIND_VERTEX_BUFFER;
+		VDesc.ByteWidth = VSize;
+		VDesc.CPUAccessFlags = 0;
+		VDesc.Usage = dx::D3D11_USAGE_IMMUTABLE;
+		dx::D3D11_SUBRESOURCE_DATA VData{};
+		VData.pSysMem = Floats;
+		pDevice->CreateBuffer(&VDesc, &VData, &m_VertexBuffer); // not checking hresult!
+
+		if (!Indices && ISize == 0) return; // early return warning?
+		//Index
+		VDesc.BindFlags = dx::D3D11_BIND_FLAG::D3D11_BIND_INDEX_BUFFER;
+		VDesc.ByteWidth = ISize * sizeof(legit::u32);
+		VDesc.CPUAccessFlags = 0;
+		VDesc.Usage = dx::D3D11_USAGE_IMMUTABLE;
+		VData.pSysMem = Indices;
+		pDevice->CreateBuffer(&VDesc, &VData, &m_IndexBuffer); // not checking hresult!
+	}
+	lagGeometry(const lagGeometry& geo) : m_VertexBuffer(geo.m_VertexBuffer), m_IndexBuffer(geo.m_IndexBuffer) {
+		geo.m_VertexBuffer->AddRef();
+		geo.m_IndexBuffer->AddRef(); // Add + 1 to known ref.
+	}
+	lagGeometry& operator=(const lagGeometry& geo) {
+		if (m_VertexBuffer) {
+			m_VertexBuffer->Release();
+		}
+		if (m_IndexBuffer) {
+			m_IndexBuffer->Release();
+		}
+		m_IndexBuffer = geo.m_IndexBuffer;
+		m_VertexBuffer = geo.m_VertexBuffer;
+		m_VertexBuffer->AddRef();
+		m_IndexBuffer->AddRef();
+		return *this;
+	}
+	lagGeometry(lagGeometry&& geo) noexcept : m_VertexBuffer(geo.m_VertexBuffer), m_IndexBuffer(geo.m_IndexBuffer), m_Stride(geo.m_Stride), m_IndexCount(geo.m_IndexCount), m_VertexCount(geo.m_VertexCount) {
+		geo.m_IndexBuffer = nullptr;
+		geo.m_VertexBuffer = nullptr;
+	}
+	lagGeometry& operator=(lagGeometry&& geo) noexcept {
+		if (m_VertexBuffer) {
+			m_VertexBuffer->Release();
+		}
+		if (m_IndexBuffer) {
+			m_IndexBuffer->Release();
+		}
+		m_VertexBuffer = geo.m_VertexBuffer;
+		m_IndexBuffer = geo.m_IndexBuffer;
+		geo.m_IndexBuffer = nullptr;
+		geo.m_VertexBuffer = nullptr;
+
+		this->m_Stride = geo.m_Stride;
+		this->m_IndexCount = geo.m_IndexCount;
+		this->m_VertexCount = geo.m_VertexCount;
+		return *(this);
+	}
+	~lagGeometry() {
+		if (m_VertexBuffer)
+			m_VertexBuffer->Release();
+		if (m_IndexBuffer)
+			m_IndexBuffer->Release();
+	}
+	void Draw(dx::ID3D11DeviceContext* pContext) const {
+		UINT strLocal = m_Stride;
+		UINT offset = 0;
+		if (m_VertexBuffer)
+			pContext->IASetVertexBuffers(0, 1, &m_VertexBuffer, &strLocal, &offset);
+		if (m_IndexBuffer)
+			pContext->IASetIndexBuffer(m_IndexBuffer, dx::DXGI_FORMAT_R32_UINT, 0);
+		if (m_IndexBuffer)
+			pContext->DrawIndexed(m_IndexCount, 0, 0);
+		else {
+			pContext->Draw(m_VertexCount, 0);
+		}
+	}
+private:
+	dx::ID3D11Buffer* m_VertexBuffer = nullptr;
+	dx::ID3D11Buffer* m_IndexBuffer = nullptr;
+	legit::u32 m_Stride = 0;
+	legit::u32 m_IndexCount = 0;
+	legit::u32 m_VertexCount = 0;
+};
+static void CreateQuadVerts(dx::ID3D11Device* pDev, lagGeometry& geo) {
+	float quadVertices[] = {
+		// positions 
+		-1.0f, -1.0f, 0,
+		-1.0f,  1.0f, 0,
+		 1.0f, -1.0f, 0,
+		-1.0f,  1.0f, 0,
+		 1.0f,  1.0f, 0,
+		 1.0f, -1.0f, 0
+	};
+	geo = lagGeometry(pDev, quadVertices, 18 * sizeof(float), nullptr, 0, sizeof(float) * 3);
+}
+
 /*
-	I Feel Like I keep getting stuck right here. Its not because of the effects getting more advanced. Its because of the reprocussions going forward. 
+	I Feel Like I keep getting stuck right here. Its not because of the effects getting more advanced. Its because of the reprocussions going forward.
 
-	Once a scene graph is defined. And its able to be used in the local sense. It effectively becomes a game of numbers. Defining Geometry and their Effects. 
+	Once a scene graph is defined. And its able to be used in the local sense. It effectively becomes a game of numbers. Defining Geometry and their Effects.
 
-	Once I write the Scene Graph, in my head. There is no going back. There is only forwards. That is both Scary. But also intriguing. This works now. It renders a quad in 3D. 
+	Once I write the Scene Graph, in my head. There is no going back. There is only forwards. That is both Scary. But also intriguing. This works now. It renders a quad in 3D.
 
-	But once it gets to that golden point. Then. Then, it is real, tangible. With that, bye for now. Soon, real progression will be made. 
-
+	But once it gets to that golden point. Then. Then, it is real, tangible. With that, bye for now. Soon, real progression will be made.
 */
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
+class lagModel {
+public:
+	struct Mats {
+		dx::DirectX::XMMATRIX Projection;
+		dx::DirectX::XMMATRIX View;
+		dx::DirectX::XMMATRIX Model;
+	} g_Mats{};
+	static constexpr const char* PathToModel = "C:\\Users\\codyc\\OneDrive\\Docs from Gaming PC\\Documents\\TestModels\\nano.glb";
+	lagModel(dx::ID3D11Device* pDev, float fAspect = 16./9.) {
+		Assimp::Importer Import{};
+		const aiScene* pScene = Import.ReadFile(PathToModel, aiProcess_Triangulate | aiProcess_JoinIdenticalVertices);
+		if (!pScene || !pScene->mRootNode) {
+			gLog("Failed to produce proper Scene.\n");
+			gLog("Assimp Err: %s.\n", Import.GetErrorString());
+			return;
+		}
+		Meshes.resize(pScene->mNumMeshes);
+		for (int i = 0; i < pScene->mNumMeshes; i++) {
+			aiMesh* m = pScene->mMeshes[i];
+			Meshes[i] = LoadFromAssimp(pDev, m);
+		}
+
+		// *Cbuffer stuff not important*
+
+		g_Mats.Model = dx::DirectX::XMMatrixTranspose(dx::DirectX::XMMatrixTranslation(0, 0, 0) * dx::DirectX::XMMatrixRotationRollPitchYaw(dx::DirectX::XMConvertToRadians(50), dx::DirectX::XMConvertToRadians(20), dx::DirectX::XMConvertToRadians(0)) * dx::DirectX::XMMatrixScaling(1, 1, 1));
+		g_Mats.Projection = dx::DirectX::XMMatrixTranspose(dx::DirectX::XMMatrixPerspectiveFovLH(dx::DirectX::XMConvertToRadians(45), fAspect, 0.01f, 100));
+		g_Mats.View = dx::DirectX::XMMatrixTranspose(dx::DirectX::XMMatrixLookAtLH({1,5,-1}, {0,0,0}, {0,1,0}));
+		/*
+			matrix m_Projection; //
+			matrix m_View; // shifts universe to camera
+			matrix m_Model; // looks
+		*/
+		dx::D3D11_BUFFER_DESC CBufferDesc{};
+		CBufferDesc.BindFlags = dx::D3D11_BIND_CONSTANT_BUFFER;
+		CBufferDesc.ByteWidth = sizeof(Mats);
+		CBufferDesc.Usage = dx::D3D11_USAGE_DYNAMIC;
+		CBufferDesc.CPUAccessFlags = dx::D3D11_CPU_ACCESS_WRITE;
+		dx::D3D11_SUBRESOURCE_DATA CBufferData{};
+		CBufferData.pSysMem = &g_Mats;
+		pDev->CreateBuffer(&CBufferDesc, &CBufferData, &CBuffer);
+		pRoot = BuildNode(nullptr, pScene->mRootNode);
+
+	}
+
+
+	dx::ID3D11Buffer* CBuffer{};
+	void SetupCam(dx::ID3D11DeviceContext* Context) {
+		Context->VSSetConstantBuffers(0, 1, &CBuffer);
+	}
+	void Draw(dx::ID3D11DeviceContext* Context) {
+		if (!pRoot) return;
+		auto currentMat = dx::DirectX::XMMatrixIdentity() * dx::DirectX::XMMatrixScaling(1, 1, 1) * dx::DirectX::XMMatrixTranslation(0, 0, 0); // representation of like the "where should I be placed" type operation.
+		GoDraw(Context, pRoot, currentMat);
+	}
+
+private:
+	lagGeometry LoadFromAssimp(dx::ID3D11Device* pDev, aiMesh* m) {
+		legit::u64 VSize = m->mNumVertices * 3;
+		float* Array = new float[VSize];
+		auto iSize = m->mNumFaces * 3; // 3 tris * Num Of Faces
+		legit::u32* IArray = new legit::u32[iSize];
+		for (int i = 0; i < m->mNumVertices; i++) {
+			Array[i * 3 + 0] = m->mVertices[i].x;
+			Array[i * 3 + 1] = m->mVertices[i].y;
+			Array[i * 3 + 2] = m->mVertices[i].z;
+		}
+		for (int i = 0; i < m->mNumFaces; i++) {
+			IArray[i * 3 + 0] = m->mFaces[i].mIndices[0];
+			IArray[i * 3 + 1] = m->mFaces[i].mIndices[1];
+			IArray[i * 3 + 2] = m->mFaces[i].mIndices[2];
+		}
+		auto res = lagGeometry(pDev, Array, VSize * sizeof(float), IArray, iSize, sizeof(float) * 3);
+		delete[] IArray;
+		delete[] Array;
+		return res;
+	}
+	std::vector<lagGeometry> Meshes{};
+	struct strNode {
+		std::vector<int> ContrlMshs{};
+		dx::DirectX::XMMATRIX NodeMat{};
+		strNode* pParent;
+		std::vector<strNode*> pChildren;
+		~strNode() {
+			for (auto& child : pChildren) {
+				delete child;
+			}
+			pChildren.clear();
+		}
+	};
+	void GoDraw(dx::ID3D11DeviceContext* Context, strNode* pParent, dx::DirectX::XMMATRIX Accrewed) {
+		Accrewed = Accrewed * pParent->NodeMat;
+		gLog("Node translation: %f %f %f\n",
+			Accrewed.r[3].m128_f32[0],
+			Accrewed.r[3].m128_f32[1],
+			Accrewed.r[3].m128_f32[2]);
+		dx::D3D11_MAPPED_SUBRESOURCE Sub{};
+		Context->Map(CBuffer, 0, dx::D3D11_MAP_WRITE_DISCARD, 0, &Sub);
+		Mats m{g_Mats};
+		m.Model = dx::DirectX::XMMatrixTranspose(Accrewed); // a lil not efficient but I mean come on we are rendering one fucking model lmao.
+		memcpy(Sub.pData, &m, sizeof(Mats));
+		Context->Unmap(CBuffer, 0);
+		Context->VSSetConstantBuffers(0, 1, &CBuffer);
+		for (const auto& r : pParent->ContrlMshs) {
+			Meshes[r].Draw(Context);
+		}
+		for (const auto& c : pParent->pChildren) {
+			GoDraw(Context, c, Accrewed); // yikes lmao.
+		}
+	}
+	static dx::DirectX::XMMATRIX AiToDx(const aiMatrix4x4& aiMat) {
+	// Assimp is row-major. DirectX is usually row-major in math, 
+	// but memory layout expected is often column-major or requires 
+	// transpose depending on shader usage.
+
+	// Copy data into a temporary DirectX matrix
+		dx::DirectX::XMFLOAT4X4 dxMat(
+			aiMat.a1, aiMat.a2, aiMat.a3, aiMat.a4,
+			aiMat.b1, aiMat.b2, aiMat.b3, aiMat.b4,
+			aiMat.c1, aiMat.c2, aiMat.c3, aiMat.c4,
+			aiMat.d1, aiMat.d2, aiMat.d3, aiMat.d4
+		);
+
+		// Load the matrix and transpose to match DirectX convention
+		return dx::DirectX::XMLoadFloat4x4(&dxMat);
+	}
+	strNode* pRoot = nullptr;
+	strNode* BuildNode(strNode* pParent, aiNode* pNode) {
+		strNode* newNode = new strNode();
+		newNode->pParent = pParent;
+		newNode->NodeMat = AiToDx(pNode->mTransformation);
+		for (int i = 0; i < pNode->mNumMeshes; i++) {
+			newNode->ContrlMshs.push_back(pNode->mMeshes[i]);
+		}
+		if (pNode->mNumChildren == 0) {
+			return newNode;
+		}
+		for (int i = 0; i < pNode->mNumChildren; i++) {
+			newNode->pChildren.push_back(BuildNode(newNode, pNode->mChildren[i]));
+		}
+		return newNode;
+	}
+};
 int main() {
 	netPlatConfig::InitClass();
 	netLogger::Init();
@@ -403,12 +680,7 @@ int main() {
 		dx::ID3D11RenderTargetView* BackBufferRTV{};
 		D3DLog(Device->CreateRenderTargetView(BackBufferRaw, NULL, &BackBufferRTV));
 		Context->OMSetRenderTargets(1, &BackBufferRTV, nullptr);
-		
-		dx::ID3D11Buffer* buffer = CreateQuadVertices(Device);
-		UINT stride = sizeof(float) * 3;
-		UINT offset = 0;
-		Context->IASetVertexBuffers(0, 1, &buffer, &stride, &offset);
-		
+
 		dx::ID3D11VertexShader* VShader{};
 		dx::ID3DBlob* pShader{}, * pErr{};
 
@@ -455,13 +727,13 @@ int main() {
 		vPort.Height = height;
 		vPort.Width = width;
 		Context->RSSetViewports(1, &vPort);
-		auto Model = dx::DirectX::XMMatrixTranspose(dx::DirectX::XMMatrixTranslation(0,0,0) * dx::DirectX::XMMatrixRotationRollPitchYaw(dx::DirectX::XMConvertToRadians(50), dx::DirectX::XMConvertToRadians(20), dx::DirectX::XMConvertToRadians(0)) * dx::DirectX::XMMatrixScaling(1, 1, 1));
+		auto Model = dx::DirectX::XMMatrixTranspose(dx::DirectX::XMMatrixTranslation(0, 0, 0) * dx::DirectX::XMMatrixRotationRollPitchYaw(dx::DirectX::XMConvertToRadians(50), dx::DirectX::XMConvertToRadians(20), dx::DirectX::XMConvertToRadians(0)) * dx::DirectX::XMMatrixScaling(1, 1, 1));
 		auto Projection = dx::DirectX::XMMatrixTranspose(dx::DirectX::XMMatrixPerspectiveFovLH(dx::DirectX::XMConvertToRadians(90.f), 16.0 / 9.0, 0.01f, 100));
-		auto View = dx::DirectX::XMMatrixTranspose(dx::DirectX::XMMatrixLookAtLH({2,0,-2}, {0,0,0}, {0,1,0}));
+		auto View = dx::DirectX::XMMatrixTranspose(dx::DirectX::XMMatrixLookAtLH({2,2,-2}, {0,0,0}, {0,1,0}));
 		/*
-		    matrix m_Projection; // 
+			matrix m_Projection; //
 			matrix m_View; // shifts universe to camera
-			matrix m_Model; // looks  
+			matrix m_Model; // looks
 		*/
 		dx::DirectX::XMMATRIX Mats[3] = {Projection, View, Model};
 
@@ -476,14 +748,83 @@ int main() {
 		Device->CreateBuffer(&CBufferDesc, &CBufferData, &CBuffer);
 		Context->VSSetConstantBuffers(0, 1, &CBuffer);
 		int i = 0;
+		dx::D3D11_RASTERIZER_DESC RDesc{};
+		RDesc.CullMode = dx::D3D11_CULL_NONE;
+		dx::ID3D11RasterizerState* pState{};
+		Device->CreateRasterizerState(&RDesc, &pState);
+		Context->RSSetState(pState);
+/*		lagGeometry g{};
+		CreateQuadVerts(Device, g);*/
+		
+		lagModel m{Device, (float)width / (float)height};
+		dx::D3D11_TEXTURE2D_DESC BBDESC{};
+		BackBufferRaw->GetDesc(&BBDESC);
+
+		dx::ID3D11Texture2D* pDepthStencil = NULL;
+		dx::D3D11_TEXTURE2D_DESC descDepth;
+		descDepth.Width = BBDESC.Width;
+		descDepth.Height = BBDESC.Height;
+		descDepth.MipLevels = 1;
+		descDepth.ArraySize = 1;
+		descDepth.Format = dx::DXGI_FORMAT_D24_UNORM_S8_UINT;
+		descDepth.SampleDesc.Count = 1;
+		descDepth.SampleDesc.Quality = 0;
+		descDepth.Usage = dx::D3D11_USAGE_DEFAULT;
+		descDepth.BindFlags = dx::D3D11_BIND_DEPTH_STENCIL;
+		descDepth.CPUAccessFlags = 0;
+		descDepth.MiscFlags = 0;
+		hr = Device->CreateTexture2D(&descDepth, NULL, &pDepthStencil);
+		dx::D3D11_DEPTH_STENCIL_DESC dsDesc;
+
+// Depth test parameters
+		dsDesc.DepthEnable = true;
+		dsDesc.DepthWriteMask = dx::D3D11_DEPTH_WRITE_MASK_ALL;
+		dsDesc.DepthFunc = dx::D3D11_COMPARISON_LESS;
+
+		// Stencil test parameters
+		dsDesc.StencilEnable = false;
+		dsDesc.StencilReadMask = 0xFF;
+		dsDesc.StencilWriteMask = 0xFF;
+
+		// Stencil operations if pixel is front-facing
+		dsDesc.FrontFace.StencilFailOp = dx::D3D11_STENCIL_OP_KEEP;
+		dsDesc.FrontFace.StencilDepthFailOp = dx::D3D11_STENCIL_OP_INCR;
+		dsDesc.FrontFace.StencilPassOp = dx::D3D11_STENCIL_OP_KEEP;
+		dsDesc.FrontFace.StencilFunc = dx::D3D11_COMPARISON_ALWAYS;
+
+		// Stencil operations if pixel is back-facing
+		dsDesc.BackFace.StencilFailOp = dx::D3D11_STENCIL_OP_KEEP;
+		dsDesc.BackFace.StencilDepthFailOp = dx::D3D11_STENCIL_OP_DECR;
+		dsDesc.BackFace.StencilPassOp = dx::D3D11_STENCIL_OP_KEEP;
+		dsDesc.BackFace.StencilFunc = dx::D3D11_COMPARISON_ALWAYS;
+		// Create depth stencil state
+		dx::ID3D11DepthStencilState* pDSState;
+		Device->CreateDepthStencilState(&dsDesc, &pDSState);
+		Context->OMSetDepthStencilState(pDSState, 1);
+		dx::D3D11_DEPTH_STENCIL_VIEW_DESC descDSV;
+		descDSV.Format = dx::DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
+		descDSV.ViewDimension = dx::D3D11_DSV_DIMENSION_TEXTURE2D;
+		descDSV.Texture2D.MipSlice = 0;
+
+		// Create the depth stencil view
+		dx::ID3D11DepthStencilView* pDSV;
+		hr = Device->CreateDepthStencilView(pDepthStencil, // Depth stencil texture
+			&descDSV, // Depth stencil desc
+			&pDSV);  // [out] Depth stencil view
+
+// Bind the depth stencil view
+		Context->OMSetRenderTargets(1,          // One rendertarget view
+			&BackBufferRTV,      // Render target view, created earlier
+			pDSV);     // Depth stencil view for the render target
+
+
 		while (!ShouldWindowClose) {
 			WindowDef(ShouldWindowClose);
 			float fColor[4] = {0,0,0,1};
 			Context->ClearRenderTargetView(BackBufferRTV, fColor);
-			Context->Draw(6,0);
-			
-
-
+			Context->ClearDepthStencilView(pDSV, dx::D3D11_CLEAR_DEPTH, 1,0);
+			//g.Draw(Context);
+			m.Draw(Context);
 			SwapChain->Present(0, 0);
 			Sleep(1);
 		}
