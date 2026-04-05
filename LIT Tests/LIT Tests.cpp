@@ -1,3 +1,4 @@
+#include <sstream>
 #include <stdio.h>
 #include <stdlib.h>
 #include <LITemplates/alloc/Default.h>
@@ -523,7 +524,7 @@ public:
 	static constexpr const char* PathToModel = "C:\\Users\\codyc\\OneDrive\\Docs from Gaming PC\\Documents\\TestModels\\nano.glb";
 	lagModel(dx::ID3D11Device* pDev, float fAspect = 16./9.) {
 		Assimp::Importer Import{};
-		const aiScene* pScene = Import.ReadFile(PathToModel, aiProcess_Triangulate | aiProcess_JoinIdenticalVertices);
+		const aiScene* pScene = Import.ReadFile(PathToModel, aiProcess_Triangulate | aiProcess_JoinIdenticalVertices | aiProcess_ConvertToLeftHanded);
 		if (!pScene || !pScene->mRootNode) {
 			gLog("Failed to produce proper Scene.\n");
 			gLog("Assimp Err: %s.\n", Import.GetErrorString());
@@ -564,8 +565,9 @@ public:
 	}
 	void Draw(dx::ID3D11DeviceContext* Context) {
 		if (!pRoot) return;
-		auto currentMat = dx::DirectX::XMMatrixIdentity() * dx::DirectX::XMMatrixScaling(1, 1, 1) * dx::DirectX::XMMatrixTranslation(0, 0, 0); // representation of like the "where should I be placed" type operation.
-		GoDraw(Context, pRoot, currentMat);
+		
+		auto currentMat = dx::DirectX::XMMatrixIdentity() * dx::DirectX::XMMatrixScaling(1, 1, 1) * dx::DirectX::XMMatrixTranslation(0, -15, 0); // representation of like the "where should I be placed" type operation.
+		GoDraw(Context, pRoot, 0, currentMat);
 	}
 
 private:
@@ -592,7 +594,8 @@ private:
 	std::vector<lagGeometry> Meshes{};
 	struct strNode {
 		std::vector<int> ContrlMshs{};
-		dx::DirectX::XMMATRIX NodeMat{};
+		std::string Name;
+		dx::DirectX::XMMATRIX NodeMat{dx::DirectX::XMMatrixIdentity()};
 		strNode* pParent;
 		std::vector<strNode*> pChildren;
 		~strNode() {
@@ -602,12 +605,13 @@ private:
 			pChildren.clear();
 		}
 	};
-	void GoDraw(dx::ID3D11DeviceContext* Context, strNode* pParent, dx::DirectX::XMMATRIX Accrewed) {
+	void GoDraw(dx::ID3D11DeviceContext* Context, strNode* pParent, int depth, dx::DirectX::XMMATRIX Accrewed) {
+		if (pParent->Name == "Cube") return;
 		Accrewed = Accrewed * pParent->NodeMat;
-		gLog("Node translation: %f %f %f\n",
-			Accrewed.r[3].m128_f32[0],
-			Accrewed.r[3].m128_f32[1],
-			Accrewed.r[3].m128_f32[2]);
+/*		for (int i = 0; i < depth; i++) {
+			netLogger::Send({"\t"});
+		}*/
+		netLogger::Send({"%s: %s\n", pParent->Name.c_str(), MatrixToString(Accrewed).c_str()});
 		dx::D3D11_MAPPED_SUBRESOURCE Sub{};
 		Context->Map(CBuffer, 0, dx::D3D11_MAP_WRITE_DISCARD, 0, &Sub);
 		Mats m{g_Mats};
@@ -619,28 +623,40 @@ private:
 			Meshes[r].Draw(Context);
 		}
 		for (const auto& c : pParent->pChildren) {
-			GoDraw(Context, c, Accrewed); // yikes lmao.
+			GoDraw(Context, c, depth + 1, Accrewed); // yikes lmao.
 		}
 	}
-	static dx::DirectX::XMMATRIX AiToDx(const aiMatrix4x4& aiMat) {
-	// Assimp is row-major. DirectX is usually row-major in math, 
-	// but memory layout expected is often column-major or requires 
-	// transpose depending on shader usage.
+	std::string MatrixToString(dx::DirectX::XMMATRIX matrix) {
+	// Stored in row-major format, you access elements like this:
+	// M11 M12 M13 M14
+	// M21 M22 M23 M24
+	// etc.
 
-	// Copy data into a temporary DirectX matrix
-		dx::DirectX::XMFLOAT4X4 dxMat(
-			aiMat.a1, aiMat.a2, aiMat.a3, aiMat.a4,
-			aiMat.b1, aiMat.b2, aiMat.b3, aiMat.b4,
-			aiMat.c1, aiMat.c2, aiMat.c3, aiMat.c4,
-			aiMat.d1, aiMat.d2, aiMat.d3, aiMat.d4
+	// Use an XMFLOAT4X4 helper structure for easier element access
+		dx::DirectX::XMFLOAT4X4 float4x4;
+		dx::DirectX::XMStoreFloat4x4(&float4x4, matrix);
+
+		std::stringstream ss;
+		ss << "Matrix:\n";
+		ss << float4x4.m[0][0] << ", " << float4x4.m[0][1] << ", " << float4x4.m[0][2] << ", " << float4x4.m[0][3] << "\n";
+		ss << float4x4.m[1][0] << ", " << float4x4.m[1][1] << ", " << float4x4.m[1][2] << ", " << float4x4.m[1][3] << "\n";
+		ss << float4x4.m[2][0] << ", " << float4x4.m[2][1] << ", " << float4x4.m[2][2] << ", " << float4x4.m[2][3] << "\n";
+		ss << float4x4.m[3][0] << ", " << float4x4.m[3][1] << ", " << float4x4.m[3][2] << ", " << float4x4.m[3][3];
+
+		return ss.str();
+	}
+	static dx::DirectX::XMMATRIX AiToDx(const aiMatrix4x4& m) {
+		return dx::DirectX::XMMATRIX(
+			m.a1, m.b1, m.c1, m.d1,
+			m.a2, m.b2, m.c2, m.d2,
+			m.a3, m.b3, m.c3, m.d3,
+			m.a4, m.b4, m.c4, m.d4
 		);
-
-		// Load the matrix and transpose to match DirectX convention
-		return dx::DirectX::XMLoadFloat4x4(&dxMat);
 	}
 	strNode* pRoot = nullptr;
 	strNode* BuildNode(strNode* pParent, aiNode* pNode) {
 		strNode* newNode = new strNode();
+		newNode->Name = std::string(pNode->mName.C_Str());
 		newNode->pParent = pParent;
 		newNode->NodeMat = AiToDx(pNode->mTransformation);
 		for (int i = 0; i < pNode->mNumMeshes; i++) {
@@ -727,14 +743,13 @@ int main() {
 		vPort.Height = height;
 		vPort.Width = width;
 		Context->RSSetViewports(1, &vPort);
-		auto Model = dx::DirectX::XMMatrixTranspose(dx::DirectX::XMMatrixTranslation(0, 0, 0) * dx::DirectX::XMMatrixRotationRollPitchYaw(dx::DirectX::XMConvertToRadians(50), dx::DirectX::XMConvertToRadians(20), dx::DirectX::XMConvertToRadians(0)) * dx::DirectX::XMMatrixScaling(1, 1, 1));
+/*		auto Model = dx::DirectX::XMMatrixTranspose(dx::DirectX::XMMatrixTranslation(0, 0, 0) * dx::DirectX::XMMatrixRotationRollPitchYaw(dx::DirectX::XMConvertToRadians(50), dx::DirectX::XMConvertToRadians(20), dx::DirectX::XMConvertToRadians(0)) * dx::DirectX::XMMatrixScaling(1, 1, 1));
 		auto Projection = dx::DirectX::XMMatrixTranspose(dx::DirectX::XMMatrixPerspectiveFovLH(dx::DirectX::XMConvertToRadians(90.f), 16.0 / 9.0, 0.01f, 100));
 		auto View = dx::DirectX::XMMatrixTranspose(dx::DirectX::XMMatrixLookAtLH({2,2,-2}, {0,0,0}, {0,1,0}));
 		/*
 			matrix m_Projection; //
 			matrix m_View; // shifts universe to camera
 			matrix m_Model; // looks
-		*/
 		dx::DirectX::XMMATRIX Mats[3] = {Projection, View, Model};
 
 		dx::ID3D11Buffer* CBuffer{};
@@ -746,18 +761,24 @@ int main() {
 		dx::D3D11_SUBRESOURCE_DATA CBufferData{};
 		CBufferData.pSysMem = Mats;
 		Device->CreateBuffer(&CBufferDesc, &CBufferData, &CBuffer);
-		Context->VSSetConstantBuffers(0, 1, &CBuffer);
+		Context->VSSetConstantBuffers(0, 1, &CBuffer)
+		;*/
 		int i = 0;
 		dx::D3D11_RASTERIZER_DESC RDesc{};
 		RDesc.CullMode = dx::D3D11_CULL_NONE;
+		RDesc.FillMode = dx::D3D11_FILL_SOLID;
+		RDesc.MultisampleEnable = false;
+		RDesc.AntialiasedLineEnable = false;
 		dx::ID3D11RasterizerState* pState{};
 		Device->CreateRasterizerState(&RDesc, &pState);
 		Context->RSSetState(pState);
-/*		lagGeometry g{};
-		CreateQuadVerts(Device, g);*/
+/*		
+		lagGeometry g{};
+		CreateQuadVerts(Device, g);
+*/
 		
 		lagModel m{Device, (float)width / (float)height};
-		dx::D3D11_TEXTURE2D_DESC BBDESC{};
+/*		dx::D3D11_TEXTURE2D_DESC BBDESC{};
 		BackBufferRaw->GetDesc(&BBDESC);
 
 		dx::ID3D11Texture2D* pDepthStencil = NULL;
@@ -815,18 +836,15 @@ int main() {
 // Bind the depth stencil view
 		Context->OMSetRenderTargets(1,          // One rendertarget view
 			&BackBufferRTV,      // Render target view, created earlier
-			pDSV);     // Depth stencil view for the render target
-
-
+			pDSV);     // Depth stencil view for the render target*/
 		while (!ShouldWindowClose) {
 			WindowDef(ShouldWindowClose);
 			float fColor[4] = {0,0,0,1};
 			Context->ClearRenderTargetView(BackBufferRTV, fColor);
-			Context->ClearDepthStencilView(pDSV, dx::D3D11_CLEAR_DEPTH, 1,0);
+			//Context->ClearDepthStencilView(pDSV, dx::D3D11_CLEAR_DEPTH, 1,0);
 			//g.Draw(Context);
 			m.Draw(Context);
 			SwapChain->Present(0, 0);
-			Sleep(1);
 		}
 	}
 	netLogger::Shutdown();
