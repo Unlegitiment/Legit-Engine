@@ -1,6 +1,6 @@
 struct VSInput
 {
-    float2 Position : POSITION0;
+    float3 Position : POSITION0;
 };
 //basic
 struct VSInput3D
@@ -20,7 +20,7 @@ cbuffer LagMatrices : register(b0)
 VSOut BasicTranslate(VSInput vs)
 {
     VSOut output;
-    output.Pos = float4(vs.Position,0,1);
+    output.Pos = float4(vs.Position,1);
     return output;
 }
 VSOut BasicTranslate3D(VSInput3D ia)
